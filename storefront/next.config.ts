@@ -1,7 +1,4 @@
 import type { NextConfig } from 'next';
-import createNextIntlPlugin from 'next-intl/plugin';
-
-const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
 
 // Server-side URL of the .NET API. The browser never talks to it directly:
 // it uses same-origin /backend/* and /uploads/* which Next proxies below.
@@ -31,6 +28,20 @@ const csp = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+
+  // next-intl wiring WITHOUT the `next-intl/plugin` wrapper.
+  // The plugin's only jobs are (1) aliasing 'next-intl/config' to the request config file and (2) exposing
+  // trailing-slash/basePath to the runtime (we use neither). Importing the plugin loads @swc/core (needed only for
+  // its optional message-extraction feature), and that native addon fails its permission check on some Windows
+  // machines. Next.js 16 uses Turbopack, which needs a RELATIVE alias path. To go back to the plugin later:
+  //   import createNextIntlPlugin from 'next-intl/plugin';
+  //   export default createNextIntlPlugin('./src/i18n/request.ts')(nextConfig);
+  turbopack: {
+    resolveAlias: {
+      'next-intl/config': './src/i18n/request.ts',
+    },
+  },
+
   async rewrites() {
     return [
       { source: '/backend/:path*', destination: `${API_URL}/:path*` },
@@ -58,4 +69,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withNextIntl(nextConfig);
+export default nextConfig;

@@ -3,7 +3,7 @@
 Persian-first (RTL), multilingual online shop that runs as an installable PWA.
 
 ```
-storefront/  Next.js 15 + TypeScript + Tailwind + next-intl   (customer site, fa/en)  :3000
+storefront/  Next.js 16 + TypeScript + Tailwind + next-intl   (customer site, fa/en)  :3000
 admin/       React 18 + TypeScript + Vite + Ant Design         (WordPress-style dashboard) :5173
 api/         .NET 8 Web API + EF Core + PostgreSQL + Identity/JWT                       :5080
 ```
@@ -98,6 +98,14 @@ shared button/card/input styles in `storefront/src/app/globals.css`.
 Adding to the cart has no flying animation. The "Add" button turns into a − / quantity / + stepper in place, the header
 cart shows the running total, the cart opens as a slide-in **mini cart** (also on the mobile bottom bar), and only the
 count badge gives a tiny bump when it changes.
+
+## Next.js 16 notes
+
+The storefront targets Next.js 16 (Turbopack) and next-intl 4. Locale routing runs in `src/proxy.ts` (Next 16's name for
+`middleware.ts`). `next.config.ts` wires next-intl by aliasing `next-intl/config` itself instead of using
+`next-intl/plugin`, because the plugin loads the `@swc/core` native addon (only needed for next-intl's optional message
+extraction), which fails its permission check on some Windows machines. If `@swc/core` works on your machine you may
+switch back to the plugin (snippet in the comment inside `next.config.ts`).
 
 ## Stories, recommendations, assistant, 3D store (version 4)
 
