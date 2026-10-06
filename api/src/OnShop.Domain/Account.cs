@@ -24,3 +24,14 @@ public class Favorite
     public Product Product { get; set; } = null!;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
+
+/// <summary>Seconds a customer spent in the 3D store on one calendar day (Tehran time). Used for the daily limit.</summary>
+public class Shop3dUsage
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    /// <summary>yyyy-MM-dd in Tehran time.</summary>
+    public string Day { get; set; } = "";
+    public int Seconds { get; set; }
+    public DateTime? LastBeatAt { get; set; }
+}

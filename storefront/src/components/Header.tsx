@@ -12,10 +12,13 @@ export default async function Header({
   siteName,
   supportText,
   shop3d = false,
+  logoUrl = null,
 }: {
   siteName: string;
   supportText?: string | null;
   shop3d?: boolean;
+  /** Local /uploads/... image chosen in the admin settings; without it the first letter of the name is shown. */
+  logoUrl?: string | null;
 }) {
   const locale = await getLocale();
   const categories = (await apiGet<CategoryItem[]>(`/api/catalog/categories?lang=${locale}`, 60)) ?? [];
@@ -26,11 +29,16 @@ export default async function Header({
       {/* Only the main bar sticks to the top while scrolling */}
       <div className="sticky top-0 z-40 border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5">
-          <Link href="/" className="flex items-center gap-2 text-xl font-extrabold text-brand-700">
-            <span className="grid h-9 w-9 place-items-center rounded-md bg-brand-600 text-lg text-white" aria-hidden>
-              {siteName.trim().charAt(0)}
-            </span>
-            <span className="hidden sm:inline">{siteName}</span>
+          <Link href="/" className="flex items-center gap-2 text-xl font-extrabold text-brand-700" aria-label={siteName}>
+            {logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={logoUrl} alt="" className="h-10 w-auto max-w-[150px] object-contain" />
+            ) : (
+              <span className="grid h-9 w-9 place-items-center rounded-md bg-brand-600 text-lg text-white" aria-hidden>
+                {siteName.trim().charAt(0)}
+              </span>
+            )}
+            <span className={logoUrl ? 'hidden lg:inline' : 'hidden sm:inline'}>{siteName}</span>
           </Link>
           <div className="order-last flex w-full md:order-none md:w-auto md:flex-1">
             <SearchBox />

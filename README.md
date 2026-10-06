@@ -123,6 +123,18 @@ switch back to the plugin (snippet in the comment inside `next.config.ts`).
   to zoom, click a product to see its price and add it to the cart. Product pictures are drawn on the box fronts.
   Falls back to a link to the normal list when WebGL is unavailable. Up to 8 aisles x 12 products.
 - Admin → Settings → **Store features** switches the 3D store and the assistant on or off.
+- **3D store access and time limit** (Settings → Store features): *login required* (default on; guests see a sign-in
+  card) and *daily minutes* (default 10, 0 = unlimited). The time is counted on the server per user per day (Tehran
+  time, resets at midnight): the page calls `POST /api/me/shop3d/start` and a heartbeat every 10 s while the tab is
+  visible; the server adds the clock time between beats (capped), so tabs don't double count. When time runs out the store
+  is replaced by a "come back tomorrow" card. Note: the 3D page only *displays* catalog data that is public anyway, so
+  the limit is a usage rule (enforced by the server's counter and the page), not a security boundary. If the admin lets
+  guests in, guests are not limited.
+- **Shop logo** (Settings → Site information): upload an image; it replaces the letter badge in the header, appears in
+  the footer, and on the back-wall sign of the 3D store. Local uploads only. (PWA home-screen icons are separate files:
+  regenerate `tools/make-icons.ps1` or replace `public/icons/*` to brand them.)
+- 3D polish: fake contact shadows, a "special offers" poster built from the current discounts, fullscreen, and an optional
+  chime (synthesized in the browser, no audio files) when an item goes into the basket.
 
 ## Delivery address on the map
 

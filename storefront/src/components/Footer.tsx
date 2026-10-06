@@ -2,7 +2,7 @@ import { useTranslations } from 'next-intl';
 import { Link } from '@/i18n/navigation';
 
 /** Classic multi-column store footer. The first column shows the "footer" fixed text managed in the admin. */
-export default function Footer({ siteName, text }: { siteName: string; text?: string | null }) {
+export default function Footer({ siteName, text, logoUrl = null }: { siteName: string; text?: string | null; logoUrl?: string | null }) {
   const t = useTranslations('footer');
   const tc = useTranslations('common');
 
@@ -14,7 +14,13 @@ export default function Footer({ siteName, text }: { siteName: string; text?: st
       <div className="border-t-4 border-brand-600" />
       <div className="mx-auto grid max-w-7xl gap-8 px-4 py-8 sm:grid-cols-2 lg:grid-cols-4">
         <div className="space-y-3">
-          <p className="text-lg font-extrabold text-white">{siteName}</p>
+          {logoUrl ? (
+            // white backing so dark logos stay readable on the dark footer
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={logoUrl} alt={siteName} className="h-12 w-auto max-w-[180px] rounded bg-white object-contain p-1" />
+          ) : (
+            <p className="text-lg font-extrabold text-white">{siteName}</p>
+          )}
           <p className="whitespace-pre-line text-sm leading-7">{text || t('about')}</p>
         </div>
 

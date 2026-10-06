@@ -57,6 +57,7 @@ export default async function LocaleLayout({
   // Feature switches from the admin settings (on unless explicitly turned off)
   const shop3d = settings?.['site.shop3d_enabled'] !== 'false';
   const assistant = settings?.['site.assistant_enabled'] !== 'false';
+  const logoUrl = settings?.['site.logo_url'] || null; // chosen by the admin (Settings → Site information)
 
   return (
     <html lang={locale} dir={isRtl(locale) ? 'rtl' : 'ltr'}>
@@ -66,9 +67,9 @@ export default async function LocaleLayout({
       <body suppressHydrationWarning className="flex min-h-screen flex-col pb-16 md:pb-0">
         <NextIntlClientProvider messages={messages}>
           <MapSettingsProvider value={mapSettings}>
-            <Header siteName={siteName} supportText={footerText?.text} shop3d={shop3d} />
+            <Header siteName={siteName} supportText={footerText?.text} shop3d={shop3d} logoUrl={logoUrl} />
             <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-5">{children}</main>
-            <Footer siteName={siteName} text={footerText?.text} />
+            <Footer siteName={siteName} text={footerText?.text} logoUrl={logoUrl} />
             <MiniCart />
             <CartBar />
             <LocationPrompt />

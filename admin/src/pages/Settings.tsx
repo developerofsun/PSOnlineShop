@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, App, Button, Card, Form, Input, InputNumber, Switch } from 'antd';
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
+import ImageUpload from '../components/ImageUpload';
 import { useAuth } from '../lib/auth';
 import { toAscii } from '../lib/format';
 
@@ -12,7 +13,10 @@ type Values = {
   'site.description.en': string;
   'shop.shipping_cost': number;
   'shop.low_stock_threshold': number;
+  'site.logo_url': string;
   'site.shop3d_enabled': boolean;
+  'site.shop3d_login_required': boolean;
+  'site.shop3d_daily_minutes': number;
   'site.assistant_enabled': boolean;
   'site.map_enabled': boolean;
   'site.map_tile_url': string;
@@ -43,7 +47,10 @@ export default function SettingsPage() {
       'shop.shipping_cost': Number(data['shop.shipping_cost'] ?? 0),
       'shop.low_stock_threshold': Number(data['shop.low_stock_threshold'] ?? 5),
       // on unless explicitly turned off (matches the storefront)
+      'site.logo_url': data['site.logo_url'] ?? '',
       'site.shop3d_enabled': data['site.shop3d_enabled'] !== 'false',
+      'site.shop3d_login_required': data['site.shop3d_login_required'] !== 'false',
+      'site.shop3d_daily_minutes': Number(data['site.shop3d_daily_minutes'] ?? 10),
       'site.assistant_enabled': data['site.assistant_enabled'] !== 'false',
       'site.map_enabled': data['site.map_enabled'] === 'true',
       'site.map_tile_url': data['site.map_tile_url'] || DEFAULT_TILE,
@@ -77,6 +84,13 @@ export default function SettingsPage() {
       {!canEdit && <Alert type="info" showIcon message="شما اجازه‌ی تغییر تنظیمات را ندارید." style={{ marginBottom: 16 }} />}
       <Form form={form} layout="vertical" onFinish={onFinish} disabled={!canEdit} style={{ maxWidth: 680 }}>
         <Card title="اطلاعات سایت" style={{ marginBottom: 16 }}>
+          <Form.Item
+            name="site.logo_url"
+            label="لوگوی فروشگاه"
+            extra="در هدر، فوتر و تابلوی فروشگاه سه‌بعدی نمایش داده می‌شود. تصویر با پس‌زمینه شفاف یا سفید و نسبت افقی بهتر دیده می‌شود. خالی = حرف اول نام فروشگاه."
+          >
+            <ImageUpload />
+          </Form.Item>
           <Form.Item name="site.name.fa" label="نام فروشگاه (فارسی)">
             <Input />
           </Form.Item>
@@ -103,6 +117,21 @@ export default function SettingsPage() {
         <Card title="امکانات فروشگاه" style={{ marginBottom: 16 }}>
           <Form.Item name="site.shop3d_enabled" label="فروشگاه سه‌بعدی" valuePropName="checked" extra="لینک «فروشگاه سه‌بعدی» در نوار دسته‌بندی‌ها نمایش داده می‌شود.">
             <Switch checkedChildren="روشن" unCheckedChildren="خاموش" />
+          </Form.Item>
+          <Form.Item
+            name="site.shop3d_login_required"
+            label="ورود به فروشگاه سه‌بعدی فقط برای کاربران واردشده"
+            valuePropName="checked"
+            extra="اگر روشن باشد، مهمان‌ها به‌جای فروشگاه، کارت ورود/ثبت‌نام می‌بینند. اگر خاموش باشد مهمان‌ها هم وارد می‌شوند و محدودیت زمانی برای آن‌ها اعمال نمی‌شود (زمان فقط برای کاربران واردشده شمارش می‌شود)."
+          >
+            <Switch checkedChildren="الزامی" unCheckedChildren="آزاد" />
+          </Form.Item>
+          <Form.Item
+            name="site.shop3d_daily_minutes"
+            label="حداکثر زمان روزانه در فروشگاه سه‌بعدی (دقیقه)"
+            extra="۰ یعنی نامحدود. زمان در سرور شمارش می‌شود و هر روز (به وقت تهران، از نیمه‌شب) برای هر کاربر از نو شروع می‌شود. با تمام شدن زمان، فروشگاه سه‌بعدی تا فردا بسته می‌شود."
+          >
+            <InputNumber min={0} max={1440} precision={0} style={{ width: '100%' }} addonAfter="دقیقه" />
           </Form.Item>
           <Form.Item
             name="site.assistant_enabled"

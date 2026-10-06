@@ -29,12 +29,20 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Favorite> Favorites => Set<Favorite>();
     public DbSet<Story> Stories => Set<Story>();
     public DbSet<StoryItem> StoryItems => Set<StoryItem>();
+    public DbSet<Shop3dUsage> Shop3dUsages => Set<Shop3dUsage>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
         base.OnModelCreating(b);
 
         b.Entity<ContentText>(e => e.HasIndex(t => t.Key).IsUnique());
+
+        b.Entity<Shop3dUsage>(e =>
+        {
+            e.HasIndex(u => new { u.UserId, u.Day }).IsUnique();
+            e.Property(u => u.Day).HasMaxLength(10);
+            e.HasOne<AppUser>().WithMany().HasForeignKey(u => u.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
 
         b.Entity<PageTranslation>(e =>
         {

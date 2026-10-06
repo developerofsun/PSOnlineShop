@@ -30,6 +30,12 @@ const MAX_PER_AISLE = 18;
 
 const hue = (id: number) => (id * 47) % 360;
 
+/** 07:05 style countdown with the page's digits. */
+const minSec = (total: number, locale: string) => {
+  const f = new Intl.NumberFormat(locale === 'fa' ? 'fa-IR' : 'en-US', { minimumIntegerDigits: 2, useGrouping: false });
+  return `${f.format(Math.floor(total / 60))}:${f.format(total % 60)}`;
+};
+
 /** Lowercase, unify Arabic/Persian letter variants, treat the half-space (ZWNJ) as a space. */
 const norm = (s: string) =>
   s
@@ -155,7 +161,53 @@ function makeLabel(p: ProductListItem, priceText: string, rtl: boolean, badge: s
   return texture;
 }
 
-function makeSign(text: string, bg: string, w = 512, h = 128, size = 54) {
+/** Sign texture. With a logo (local /uploads image) the logo sits on a white tile at the start and the text beside it. */
+function makeSign(text: string, bg: string, w = 512, h = 128, size = 54, logo: string | null = null) {
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d')!;
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  let img: HTMLImageElement | undefined;
+  const draw = () => {
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, w, h);
+    let cx = w / 2;
+    let maxW = w - 40;
+    if (img) {
+      const tile = Math.min(w * 0.3, (h - 20) * (img.width / img.height) + 20);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(10, 10, tile, h - 20);
+      const s = Math.min((tile - 16) / img.width, (h - 36) / img.height);
+      ctx.drawImage(img, 10 + (tile - img.width * s) / 2, (h - img.height * s) / 2, img.width * s, img.height * s);
+      cx = 10 + tile + (w - 10 - tile) / 2;
+      maxW = w - 10 - tile - 30;
+    }
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `bold ${size}px ${FONT}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, cx, h / 2 + 4, maxW);
+    tex.needsUpdate = true;
+  };
+  draw();
+  document.fonts?.ready.then(draw);
+  if (logo) {
+    const i = new Image();
+    i.onload = () => {
+      img = i;
+      draw();
+    };
+    i.src = logo;
+  }
+  return tex;
+}
+
+/** Poster with the biggest discounts, hung on the back wall. */
+function makeDealsPoster(title: string, rows: { name: string; pct: string; price: string }[], rtl: boolean) {
+  const w = 512;
+  const h = 380;
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
@@ -163,13 +215,32 @@ function makeSign(text: string, bg: string, w = 512, h = 128, size = 54) {
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   const draw = () => {
-    ctx.fillStyle = bg;
+    ctx.fillStyle = '#fff8e6';
     ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#d32f2f';
+    ctx.fillRect(0, 0, w, 78);
     ctx.fillStyle = '#ffffff';
-    ctx.font = `bold ${size}px ${FONT}`;
+    ctx.font = `bold 46px ${FONT}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(text, w / 2, h / 2 + 4, w - 40);
+    ctx.direction = rtl ? 'rtl' : 'ltr';
+    ctx.fillText(title, w / 2, 42, w - 40);
+    rows.forEach((r, i) => {
+      const y = 100 + i * 70;
+      ctx.fillStyle = i % 2 ? '#fff1cc' : '#ffffff';
+      ctx.fillRect(14, y - 6, w - 28, 62);
+      ctx.fillStyle = '#d32f2f';
+      ctx.font = `bold 30px ${FONT}`;
+      ctx.textAlign = 'center';
+      ctx.fillText(r.pct, 70, y + 26);
+      ctx.fillStyle = '#1e293b';
+      ctx.font = `bold 26px ${FONT}`;
+      ctx.textAlign = rtl ? 'right' : 'left';
+      ctx.fillText(r.name, rtl ? w - 36 : 130, y + 14, 280);
+      ctx.fillStyle = '#237030';
+      ctx.font = `22px ${FONT}`;
+      ctx.fillText(r.price, rtl ? w - 36 : 130, y + 44, 280);
+    });
     tex.needsUpdate = true;
   };
   draw();
@@ -205,7 +276,21 @@ type Ctrl = {
  * Walk-through 3D store. First person: WASD / arrow keys, drag to look, click the floor to walk, click a product to
  * pick it. The basket in front of you mirrors the real cart; the counter at the entrance opens the checkout.
  */
-export default function Shop3D({ aisles, storeName, findId = null }: { aisles: Aisle[]; storeName: string; findId?: number | null }) {
+export default function Shop3D({
+  aisles,
+  storeName,
+  findId = null,
+  logoUrl = null,
+  remainingSeconds = null,
+}: {
+  aisles: Aisle[];
+  storeName: string;
+  findId?: number | null;
+  /** Shop logo from the admin settings; shown on the back-wall sign. */
+  logoUrl?: string | null;
+  /** Time left today (null = unlimited). The countdown is owned by Shop3DGate; this only displays it. */
+  remainingSeconds?: number | null;
+}) {
   const t = useTranslations('shop3d');
   const tc = useTranslations('common');
   const locale = useLocale();
@@ -225,6 +310,20 @@ export default function Shop3D({ aisles, storeName, findId = null }: { aisles: A
   const [low, setLow] = useState(false);
   const [query, setQuery] = useState('');
   const [notice, setNotice] = useState(false);
+  const [sound, setSound] = useState(false);
+  const soundRef = useRef(false);
+  soundRef.current = sound;
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [fs, setFs] = useState(false);
+  useEffect(() => {
+    const on = () => setFs(document.fullscreenElement === stageRef.current);
+    document.addEventListener('fullscreenchange', on);
+    return () => document.removeEventListener('fullscreenchange', on);
+  }, []);
+  const toggleFs = () => {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void stageRef.current?.requestFullscreen?.();
+  };
 
   // "Where is...?" search over the products on the shelves
   const results = useMemo(() => {
@@ -243,6 +342,7 @@ export default function Shop3D({ aisles, storeName, findId = null }: { aisles: A
 
   const counterLabel = t('counter');
   const currency = tc('currency');
+  const dealsTitle = t('dealsTitle');
   const cartItems = useCart((s) => s.items);
   const cartCount = cartItems.reduce((n, i) => n + i.qty, 0);
   const cartTotal = cartItems.reduce((n, i) => n + i.qty * i.price, 0);
@@ -319,7 +419,7 @@ export default function Shop3D({ aisles, storeName, findId = null }: { aisles: A
     base.position.set(0, 0.06, -D / 2 + 0.02);
     scene.add(base);
 
-    const storeSign = new THREE.Mesh(new THREE.PlaneGeometry(6, 1.3), new THREE.MeshBasicMaterial({ map: makeSign(storeName, '#2e8b3d', 768, 166, 78) }));
+    const storeSign = new THREE.Mesh(new THREE.PlaneGeometry(6, 1.3), new THREE.MeshBasicMaterial({ map: makeSign(storeName, '#2e8b3d', 768, 166, 78, logoUrl) }));
     storeSign.position.set(0, 2.5, -D / 2 + 0.03);
     scene.add(storeSign);
 
@@ -340,6 +440,14 @@ export default function Shop3D({ aisles, storeName, findId = null }: { aisles: A
     const plank = mat(0xc9ccc2);
     const accent = mat(0xe08600);
     const pickables: THREE.Mesh[] = [];
+    // soft dark patches on the floor under furniture (cheap fake contact shadows)
+    const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.16, depthWrite: false });
+    const addShadow = (x: number, z: number, w: number, d: number) => {
+      const s = new THREE.Mesh(new THREE.PlaneGeometry(w, d), shadowMat);
+      s.rotation.x = -Math.PI / 2;
+      s.position.set(x, 0.012, z);
+      scene.add(s);
+    };
 
     aisles.forEach((aisle, ai) => {
       const g = lay.gondolas[ai];
@@ -401,6 +509,7 @@ export default function Shop3D({ aisles, storeName, findId = null }: { aisles: A
         pickables.push(box);
         grp.add(box);
       });
+      addShadow(g.gx, GZ, GOND_D + 0.6, g.L + 0.6);
       scene.add(grp);
     });
 
@@ -422,7 +531,25 @@ export default function Shop3D({ aisles, storeName, findId = null }: { aisles: A
     const counterSign = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 0.45), new THREE.MeshBasicMaterial({ map: makeSign(counterLabel, '#e08600', 512, 128, 60) }));
     counterSign.position.set(0, 2.2, 0);
     counter.add(counterSign);
+    addShadow(lay.counterC.x, lay.counterC.z, 3.1, 1.5);
     scene.add(counter);
+
+    // poster with today's biggest discounts on the back wall
+    const deals = aisles
+      .flatMap((a) => a.products)
+      .filter((p) => p.salePrice != null && p.salePrice < p.price)
+      .sort((a, b) => (b.price - b.salePrice!) / b.price - (a.price - a.salePrice!) / a.price)
+      .slice(0, 4);
+    if (deals.length > 0) {
+      const rows = deals.map((p) => ({
+        name: p.name ?? p.sku,
+        pct: `${nf.format(Math.round(((p.price - p.salePrice!) / p.price) * 100))}${rtl ? '٪' : '%'}`,
+        price: `${nf.format(p.salePrice!)} ${currency}`,
+      }));
+      const poster = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 1.93), new THREE.MeshBasicMaterial({ map: makeDealsPoster(dealsTitle, rows, rtl) }));
+      poster.position.set(Math.max(W / 2 - 2.6, 4.2), 1.9, -D / 2 + 0.03);
+      scene.add(poster);
+    }
 
     // ---------------------------------------------------------------- the basket you carry (drawn on top of everything)
     const basket = new THREE.Group();
@@ -484,6 +611,28 @@ export default function Shop3D({ aisles, storeName, findId = null }: { aisles: A
       flyers.push({ mesh, t0: performance.now() });
     };
 
+    // short synthesized "added" chime (no audio files); off until the customer turns the sound on
+    let audio: AudioContext | null = null;
+    const beep = () => {
+      if (!soundRef.current) return;
+      try {
+        audio ??= new AudioContext();
+        const t0 = audio.currentTime;
+        const o = audio.createOscillator();
+        const g = audio.createGain();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(880, t0);
+        o.frequency.exponentialRampToValueAtTime(1320, t0 + 0.12);
+        g.gain.setValueAtTime(0.08, t0);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
+        o.connect(g).connect(audio.destination);
+        o.start(t0);
+        o.stop(t0 + 0.18);
+      } catch {
+        /* audio not available: stay silent */
+      }
+    };
+
     let ready = false; // ignore the cart being restored from storage at load
     const readyTimer = setTimeout(() => (ready = true), 900);
     let prevCart = new Map(useCart.getState().items.map((i) => [i.productId, i.qty]));
@@ -493,6 +642,7 @@ export default function Shop3D({ aisles, storeName, findId = null }: { aisles: A
       let added: number | null = null;
       for (const [id, q] of cur) if (q > (prevCart.get(id) ?? 0)) added = id;
       prevCart = cur;
+      if (added != null && ready) beep();
       if (added != null && ready && !reduce) spawnFlyer(added);
       else renderBasket();
     });
@@ -916,10 +1066,11 @@ export default function Shop3D({ aisles, storeName, findId = null }: { aisles: A
         }
       });
       unitBox.dispose();
+      void audio?.close();
       renderer.dispose();
       el.remove();
     };
-  }, [aisles, locale, counterLabel, currency, storeName, findId]);
+  }, [aisles, locale, counterLabel, currency, dealsTitle, storeName, logoUrl, findId]);
 
   if (noWebgl) {
     return (
@@ -995,6 +1146,12 @@ export default function Shop3D({ aisles, storeName, findId = null }: { aisles: A
             </ul>
           )}
         </form>
+        <button type="button" onClick={() => setSound((v) => !v)} aria-pressed={sound} className={`h-9 rounded-md border px-3 text-xs font-bold ${sound ? 'border-brand-600 bg-brand-50 text-brand-700' : 'border-slate-300 bg-white text-slate-600'}`}>
+          {sound ? t('soundOn') : t('soundOff')}
+        </button>
+        <button type="button" onClick={toggleFs} className="h-9 rounded-md border border-slate-300 bg-white px-3 text-xs font-bold text-slate-600">
+          {fs ? t('exitFullscreen') : t('fullscreen')}
+        </button>
         <button type="button" onClick={() => setLow((v) => !v)} aria-pressed={low} className={`h-9 rounded-md border px-3 text-xs font-bold ${low ? 'border-brand-600 bg-brand-50 text-brand-700' : 'border-slate-300 bg-white text-slate-600'}`}>
           {low ? t('highQuality') : t('lowQuality')}
         </button>
@@ -1003,9 +1160,26 @@ export default function Shop3D({ aisles, storeName, findId = null }: { aisles: A
         </Link>
       </div>
 
-      <div className="relative">
+      <div ref={stageRef} className="relative bg-white">
         {/* dir=ltr: the 3D canvas has no text direction; overlays below follow the page direction */}
-        <div ref={mountRef} dir="ltr" className="h-[72vh] min-h-[460px] w-full overflow-hidden rounded-md border border-slate-300 bg-slate-100" />
+        <div
+          ref={mountRef}
+          dir="ltr"
+          className={`w-full overflow-hidden bg-slate-100 ${fs ? 'h-screen' : 'h-[72vh] min-h-[460px] rounded-md border border-slate-300'}`}
+        />
+
+        {remainingSeconds != null && (
+          <div
+            role="timer"
+            aria-label={t('timeLeft')}
+            title={t('timeLeft')}
+            className={`pointer-events-none absolute start-1/2 top-3 -translate-x-1/2 rounded-full px-3 py-1 text-sm font-bold text-white shadow ${
+              remainingSeconds <= 60 ? 'bg-red-600' : 'bg-slate-800/85'
+            }`}
+          >
+            ⏱ {minSec(remainingSeconds, locale)}
+          </div>
+        )}
         <div className="pointer-events-none absolute start-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/90 ring-1 ring-black/40" aria-hidden />
 
         {notice && (
