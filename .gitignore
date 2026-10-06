@@ -1,0 +1,13 @@
+bin/
+obj/
+node_modules/
+.next/
+dist/
+out/
+.vs/
+.idea/
+*.user
+.env
+.env.local
+api/src/OnShop.Api/uploads/
+*.log

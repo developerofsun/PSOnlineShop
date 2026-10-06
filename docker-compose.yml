@@ -1,0 +1,25 @@
+# Local services only. Nothing here talks to the internet at runtime.
+# Pull the images once (docker compose pull), then everything works offline.
+# If you don't use Docker, install PostgreSQL natively and create the same DB/user (see README).
+services:
+  postgres:
+    image: postgres:17
+    container_name: onshop-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: onshop
+      POSTGRES_USER: onshop
+      POSTGRES_PASSWORD: onshop_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - onshop-pgdata:/var/lib/postgresql/data
+
+  # Added later when search/cart caching is implemented:
+  # redis:
+  #   image: redis:7
+  # meilisearch:
+  #   image: getmeili/meilisearch:latest
+
+volumes:
+  onshop-pgdata:

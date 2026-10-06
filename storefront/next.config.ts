@@ -1,0 +1,61 @@
+import type { NextConfig } from 'next';
+import createNextIntlPlugin from 'next-intl/plugin';
+
+const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
+
+// Server-side URL of the .NET API. The browser never talks to it directly:
+// it uses same-origin /backend/* and /uploads/* which Next proxies below.
+const API_URL = process.env.API_URL ?? 'http://localhost:5080';
+
+// Map tiles: the ONLY remote origin the storefront may load images from. It defaults to the public
+// OpenStreetMap tile server. If you host your own tile server (fully local setup), set MAP_TILE_ORIGIN to its
+// origin (e.g. http://tiles.internal:8080) and change "Map tile URL" in the admin settings. Set it to an empty
+// string to allow no remote images at all (the map then shows no tiles).
+const TILE_ORIGIN = process.env.MAP_TILE_ORIGIN ?? 'https://tile.openstreetmap.org';
+
+// Everything else must come from our own origin: no CDN, no remote fonts/scripts.
+// (Next.js needs inline scripts/styles; in dev it also needs eval for hot reload.)
+const csp = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline'",
+  `img-src 'self' data: blob: ${TILE_ORIGIN}`.trim(),
+  "font-src 'self'",
+  "connect-src 'self'",
+  "manifest-src 'self'",
+  "worker-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "frame-ancestors 'none'",
+].join('; ');
+
+const nextConfig: NextConfig = {
+  poweredByHeader: false,
+  async rewrites() {
+    return [
+      { source: '/backend/:path*', destination: `${API_URL}/:path*` },
+      { source: '/uploads/:path*', destination: `${API_URL}/uploads/:path*` },
+    ];
+  },
+  async headers() {
+    const security = [
+      { key: 'X-Content-Type-Options', value: 'nosniff' },
+      { key: 'Referrer-Policy', value: 'same-origin' },
+    ];
+    if (process.env.NODE_ENV === 'production') {
+      security.push({ key: 'Content-Security-Policy', value: csp });
+    }
+    return [
+      { source: '/:path*', headers: security },
+      {
+        source: '/sw.js',
+        headers: [
+          { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
+          { key: 'Service-Worker-Allowed', value: '/' },
+        ],
+      },
+    ];
+  },
+};
+
+export default withNextIntl(nextConfig);

@@ -1,0 +1,58 @@
+html,
+body,
+#root {
+  min-height: 100%;
+  margin: 0;
+}
+body {
+  font-family: 'Vazirmatn Variable', Vazirmatn, Tahoma, system-ui, sans-serif;
+  background: #f0f2f5;
+}
+.page-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.page-title h1 {
+  margin: 0;
+  font-size: 22px;
+}
+.bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 140px;
+}
+.bars .bar {
+  flex: 1;
+  min-width: 0;
+  background: #1d4ed8;
+  border-radius: 4px 4px 0 0;
+  min-height: 2px;
+  opacity: 0.85;
+}
+.bars .bar:hover {
+  opacity: 1;
+}
+.media-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+.media-item img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 8px;
+  display: block;
+}
+.thumb {
+  width: 44px;
+  height: 44px;
+  object-fit: cover;
+  border-radius: 6px;
+  background: #f0f0f0;
+}
