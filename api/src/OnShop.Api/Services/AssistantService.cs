@@ -27,7 +27,9 @@ public class RuleBasedAssistant(AppDbContext db, CatalogService catalog, Recomme
         "هست", "آیا", "چه", "کجا", "پیدا", "کن", "کنید", "نشان", "بده", "بدید", "میشه", "می‌شه", "شه", "و", "با", "از", "به",
         // English
         "i", "want", "a", "an", "the", "please", "need", "looking", "for", "show", "me", "do", "you", "have", "find", "any",
-        "some", "is", "there", "can", "get", "buy", "of", "to"
+        "some", "is", "there", "can", "get", "buy", "of", "to",
+        // words of "where is X?" questions
+        "کجاست", "کجا", "قفسه", "فروشگاه", "میتونم", "میتوانم", "کنم", "where", "locate", "aisle", "store", "shop", "in", "my", "on"
     };
 
     private static readonly Dictionary<string, (string Fa, string En)> Status = new()
@@ -71,6 +73,28 @@ public class RuleBasedAssistant(AppDbContext db, CatalogService catalog, Recomme
             var st = Status.TryGetValue(o.Status.ToString(), out var s) ? (fa ? s.Fa : s.En) : o.Status.ToString();
             return new(T($"آخرین سفارش شما ({o.Number}) {st} است.", $"Your latest order ({o.Number}) is {st}."),
                 [], [new(T("همه سفارش‌های من", "All my orders"), "/account")]);
+        }
+
+        // ---- "where is X?": find the product and offer to guide the customer to its shelf in the 3D store
+        if (Has("کجاست", "کجا", "قفسه", "where", "locate", "aisle"))
+        {
+            var what = tokens.Where(x => !Stop.Contains(x)).ToList();
+            if (what.Count == 0)
+                return new(T("دنبال چه محصولی هستید؟ مثلاً بنویسید «شیر کجاست؟»", "Which product are you looking for? For example: \"where is milk?\""), [], []);
+
+            var found = await catalog.SearchAsync(new ProductQuery(lang, null, string.Join(' ', what), null, null, null, true, false, 1, 3));
+            if (found.Items.Count == 0)
+                return new(T("چنین محصولی پیدا نکردم. نام دیگری را امتحان کنید.", "I could not find that product. Try another name."), [], []);
+
+            // The 3D store is optional (admin setting); without it we can only show the product.
+            var flag = await db.Settings.Where(x => x.Key == "site.shop3d_enabled").Select(x => x.Value).FirstOrDefaultAsync();
+            var links = flag == "false"
+                ? new List<AssistantLink>()
+                : found.Items.Select(p => new AssistantLink(
+                    T($"راهنمایی تا «{p.Name}» در فروشگاه سه‌بعدی", $"Guide me to \"{p.Name}\" in the 3D store"),
+                    $"/shop3d?find={p.Id}")).ToList();
+            return new(T("پیدا شد! می‌توانم شما را در فروشگاه سه‌بعدی تا قفسه‌اش راهنمایی کنم:", "Found it! I can guide you to its shelf in the 3D store:"),
+                found.Items.ToList(), links);
         }
 
         // ---- suggestions (uses purchase history, cart and favorites)

@@ -62,7 +62,8 @@ export default async function LocaleLayout({
     <html lang={locale} dir={isRtl(locale) ? 'rtl' : 'ltr'}>
       {/* Column layout: <main> grows, so the footer sits at the bottom even on short pages.
           pb-16 keeps content clear of the mobile cart bar. */}
-      <body className="flex min-h-screen flex-col pb-16 md:pb-0">
+      {/* suppressHydrationWarning: browser extensions (ColorZilla, Grammarly...) inject attributes into <body> */}
+      <body suppressHydrationWarning className="flex min-h-screen flex-col pb-16 md:pb-0">
         <NextIntlClientProvider messages={messages}>
           <MapSettingsProvider value={mapSettings}>
             <Header siteName={siteName} supportText={footerText?.text} shop3d={shop3d} />
