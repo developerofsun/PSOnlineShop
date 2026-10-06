@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import * as THREE from 'three';
-import { Link, useRouter } from '@/i18n/navigation';
+import { Link } from '@/i18n/navigation';
 import { useCart } from '@/lib/cart';
 import { formatNumber } from '@/lib/format';
 import type { ProductListItem } from '@/lib/types';
 import AddToCart from './AddToCart';
+import CheckoutForm from './CheckoutForm';
 import { CartIcon, CloseIcon } from './icons';
 import Price from './Price';
 
@@ -24,11 +25,16 @@ const BOX = { w: 0.8, h: 0.56, d: 0.34 };
 const WALL_H = 3.4;
 const GZ = -1; // gondolas are centered on this z
 const EYE = 1.6;
-const RADIUS = 0.35;
-const SPEED = 2.4;
+const RADIUS = 0.4; // trolley body
+const FRONT = 0.95; // distance from the body to the front of the trolley (second collision circle)
+const SPEED = 2.2;
 const MAX_PER_AISLE = 18;
+const TOUR_STEPS = 6;
+const TOUR_KEY = 'onshop-3d-tour';
+const POSTER = { w: 512, h: 410, rowTop: 94, rowH: 70, rowBox: 62, plane: [2.6, 2.08] as const };
 
 const hue = (id: number) => (id * 47) % 360;
+const wrapPi = (a: number) => ((((a + Math.PI) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) - Math.PI;
 
 /** 07:05 style countdown with the page's digits. */
 const minSec = (total: number, locale: string) => {
@@ -70,6 +76,7 @@ function computeLayout(aisles: Aisle[]) {
     frontZ: GZ + Lmax / 2 + 1.4,
     start: { x: 0, z: D / 2 - 2.6 },
     counter, counterC,
+    posterX: Math.max(W / 2 - 2.6, 4.2),
     obstacles: [...gondolas, counter] as Box2[],
   };
 }
@@ -204,16 +211,15 @@ function makeSign(text: string, bg: string, w = 512, h = 128, size = 54, logo: s
   return tex;
 }
 
-/** Poster with the biggest discounts, hung on the back wall. */
-function makeDealsPoster(title: string, rows: { name: string; pct: string; price: string }[], rtl: boolean) {
-  const w = 512;
-  const h = 380;
+/** Wall poster of the best offers. Each row is clickable in the scene (see POSTER for the row geometry). */
+function makeDealsPoster(title: string, hint: string, rows: { name: string; pct: string; price: string }[], rtl: boolean) {
   const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
+  canvas.width = POSTER.w;
+  canvas.height = POSTER.h;
   const ctx = canvas.getContext('2d')!;
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
+  const { w, h } = POSTER;
   const draw = () => {
     ctx.fillStyle = '#fff8e6';
     ctx.fillRect(0, 0, w, h);
@@ -226,21 +232,27 @@ function makeDealsPoster(title: string, rows: { name: string; pct: string; price
     ctx.direction = rtl ? 'rtl' : 'ltr';
     ctx.fillText(title, w / 2, 42, w - 40);
     rows.forEach((r, i) => {
-      const y = 100 + i * 70;
+      const y = POSTER.rowTop + i * POSTER.rowH;
       ctx.fillStyle = i % 2 ? '#fff1cc' : '#ffffff';
-      ctx.fillRect(14, y - 6, w - 28, 62);
+      ctx.fillRect(14, y, w - 28, POSTER.rowBox);
+      ctx.strokeStyle = '#f0c36a';
+      ctx.strokeRect(14, y, w - 28, POSTER.rowBox);
       ctx.fillStyle = '#d32f2f';
       ctx.font = `bold 30px ${FONT}`;
       ctx.textAlign = 'center';
-      ctx.fillText(r.pct, 70, y + 26);
+      ctx.fillText(r.pct, 70, y + 32);
       ctx.fillStyle = '#1e293b';
       ctx.font = `bold 26px ${FONT}`;
       ctx.textAlign = rtl ? 'right' : 'left';
-      ctx.fillText(r.name, rtl ? w - 36 : 130, y + 14, 280);
+      ctx.fillText(r.name, rtl ? w - 36 : 130, y + 20, 280);
       ctx.fillStyle = '#237030';
       ctx.font = `22px ${FONT}`;
-      ctx.fillText(r.price, rtl ? w - 36 : 130, y + 44, 280);
+      ctx.fillText(r.price, rtl ? w - 36 : 130, y + 48, 280);
     });
+    ctx.fillStyle = '#92400e';
+    ctx.font = `20px ${FONT}`;
+    ctx.textAlign = 'center';
+    ctx.fillText(hint, w / 2, h - 20, w - 40);
     tex.needsUpdate = true;
   };
   draw();
@@ -267,14 +279,16 @@ type Ctrl = {
   /** Walk to a product and mark it. Returns false when the product is not on the shelves. */
   guide: (productId: number) => boolean;
   goAisle: (i: number, side?: 1 | -1) => void;
-  goHome: () => void;
+  goTo: (place: 'entrance' | 'deals' | 'counter', openCheckout?: boolean) => void;
   mapClick: (px: number, py: number) => void;
   setLow: (low: boolean) => void;
 };
 
 /**
- * Walk-through 3D store. First person: WASD / arrow keys, drag to look, click the floor to walk, click a product to
- * pick it. The basket in front of you mirrors the real cart; the counter at the entrance opens the checkout.
+ * Walk-through 3D store where you push a shopping trolley.
+ *  - W/S drive, A/D (or the arrows) steer, drag to look around (the trolley keeps its heading), C re-centers the view.
+ *  - Click the floor or the minimap to be driven somewhere; click a product or a wall offer to pick it.
+ *  - The trolley mirrors the real cart. The counter opens the checkout right inside the store.
  */
 export default function Shop3D({
   aisles,
@@ -294,27 +308,46 @@ export default function Shop3D({
   const t = useTranslations('shop3d');
   const tc = useTranslations('common');
   const locale = useLocale();
-  const router = useRouter();
-  const routerRef = useRef(router);
-  routerRef.current = router;
 
   const mountRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<HTMLCanvasElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
   const ctrl = useRef<Ctrl | null>(null);
   const keys = useRef(new Set<string>());
 
   const [selected, setSelected] = useState<ProductListItem | null>(null);
   const [hover, setHover] = useState<string | null>(null);
   const [noWebgl, setNoWebgl] = useState(false);
-  const [help, setHelp] = useState(true);
   const [low, setLow] = useState(false);
   const [query, setQuery] = useState('');
   const [notice, setNotice] = useState(false);
   const [sound, setSound] = useState(false);
+  const [fs, setFs] = useState(false);
+  const [tour, setTour] = useState<number | null>(null);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+
   const soundRef = useRef(false);
   soundRef.current = sound;
-  const stageRef = useRef<HTMLDivElement>(null);
-  const [fs, setFs] = useState(false);
+  const blockedRef = useRef(false); // true while the checkout panel is open: the scene ignores input
+  blockedRef.current = checkoutOpen;
+  const openCheckoutRef = useRef<() => void>(() => {});
+  openCheckoutRef.current = () => {
+    if (document.fullscreenElement) void document.exitFullscreen(); // the map prompt and payment page need the normal view
+    keys.current.clear();
+    setSelected(null);
+    setCheckoutOpen(true);
+  };
+
+  const counterLabel = t('counter');
+  const currency = tc('currency');
+  const dealsTitle = t('dealsTitle');
+  const dealsHint = t('dealsHint');
+  const cartItems = useCart((s) => s.items);
+  const cartCount = cartItems.reduce((n, i) => n + i.qty, 0);
+  const cartTotal = cartItems.reduce((n, i) => n + i.qty * i.price, 0);
+
+  useEffect(() => ctrl.current?.setLow(low), [low]);
+
   useEffect(() => {
     const on = () => setFs(document.fullscreenElement === stageRef.current);
     document.addEventListener('fullscreenchange', on);
@@ -324,6 +357,36 @@ export default function Shop3D({
     if (document.fullscreenElement) void document.exitFullscreen();
     else void stageRef.current?.requestFullscreen?.();
   };
+
+  // first visit: start the guided tour
+  useEffect(() => {
+    try {
+      if (!localStorage.getItem(TOUR_KEY)) setTour(0);
+    } catch {
+      setTour(0);
+    }
+  }, []);
+  const endTour = () => {
+    setTour(null);
+    try {
+      localStorage.setItem(TOUR_KEY, '1');
+    } catch {
+      /* storage blocked: the tour simply shows again next time */
+    }
+  };
+  // some tour steps drive the trolley to the place they talk about
+  useEffect(() => {
+    if (tour === 3) ctrl.current?.goTo('deals');
+    else if (tour === 5) ctrl.current?.goTo('counter');
+  }, [tour]);
+
+  // Escape closes the checkout panel
+  useEffect(() => {
+    if (!checkoutOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setCheckoutOpen(false);
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [checkoutOpen]);
 
   // "Where is...?" search over the products on the shelves
   const results = useMemo(() => {
@@ -339,15 +402,6 @@ export default function Shop3D({
       }
     return out.slice(0, 6);
   }, [query, aisles]);
-
-  const counterLabel = t('counter');
-  const currency = tc('currency');
-  const dealsTitle = t('dealsTitle');
-  const cartItems = useCart((s) => s.items);
-  const cartCount = cartItems.reduce((n, i) => n + i.qty, 0);
-  const cartTotal = cartItems.reduce((n, i) => n + i.qty * i.price, 0);
-
-  useEffect(() => ctrl.current?.setLow(low), [low]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -380,7 +434,11 @@ export default function Shop3D({
     scene.fog = new THREE.Fog(0xeef3ee, 16, 42);
     const camera = new THREE.PerspectiveCamera(70, 1, 0.05, 80);
     camera.rotation.order = 'YXZ';
-    scene.add(camera); // so the basket (a child of the camera) is traversed and disposed with the scene
+    // The "rig" is the trolley's frame of reference: it sits on the floor and turns with the trolley's heading.
+    // The camera is the head on top of it (it can look around independently) and the trolley is its other child.
+    const rig = new THREE.Group();
+    rig.add(camera);
+    scene.add(rig);
 
     scene.add(new THREE.HemisphereLight(0xffffff, 0xbdcdbd, 1.25));
     const sun = new THREE.DirectionalLight(0xffffff, 0.7);
@@ -513,7 +571,7 @@ export default function Shop3D({
       scene.add(grp);
     });
 
-    // checkout counter near the entrance
+    // checkout counter near the entrance (click it: the trolley drives there and the checkout opens)
     const counter = new THREE.Group();
     counter.position.set(lay.counterC.x, 0, lay.counterC.z);
     const desk = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.95, 0.9), mat(0x2e8b3d));
@@ -527,14 +585,15 @@ export default function Shop3D({
     counter.add(register);
     desk.userData = { checkout: true };
     deskTop.userData = { checkout: true };
-    pickables.push(desk, deskTop);
+    register.userData = { checkout: true };
+    pickables.push(desk, deskTop, register);
     const counterSign = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 0.45), new THREE.MeshBasicMaterial({ map: makeSign(counterLabel, '#e08600', 512, 128, 60) }));
     counterSign.position.set(0, 2.2, 0);
     counter.add(counterSign);
     addShadow(lay.counterC.x, lay.counterC.z, 3.1, 1.5);
     scene.add(counter);
 
-    // poster with today's biggest discounts on the back wall
+    // wall of offers: rows are clickable
     const deals = aisles
       .flatMap((a) => a.products)
       .filter((p) => p.salePrice != null && p.salePrice < p.price)
@@ -546,68 +605,103 @@ export default function Shop3D({
         pct: `${nf.format(Math.round(((p.price - p.salePrice!) / p.price) * 100))}${rtl ? '٪' : '%'}`,
         price: `${nf.format(p.salePrice!)} ${currency}`,
       }));
-      const poster = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 1.93), new THREE.MeshBasicMaterial({ map: makeDealsPoster(dealsTitle, rows, rtl) }));
-      poster.position.set(Math.max(W / 2 - 2.6, 4.2), 1.9, -D / 2 + 0.03);
+      const poster = new THREE.Mesh(
+        new THREE.PlaneGeometry(POSTER.plane[0], POSTER.plane[1]),
+        new THREE.MeshBasicMaterial({ map: makeDealsPoster(dealsTitle, dealsHint, rows, rtl) }),
+      );
+      poster.position.set(lay.posterX, 1.9, -D / 2 + 0.03);
+      poster.userData = { poster: true };
+      pickables.push(poster);
       scene.add(poster);
     }
-
-    // ---------------------------------------------------------------- the basket you carry (drawn on top of everything)
-    const basket = new THREE.Group();
-    basket.position.set(0.3, -0.34, -0.72);
-    basket.rotation.set(0.5, -0.25, 0);
-    const basketMat = new THREE.MeshStandardMaterial({ color: 0xd9482b, depthTest: false });
-    const addPart = (w: number, h: number, d: number, x: number, y: number, z: number) => {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), basketMat);
-      m.position.set(x, y, z);
-      m.renderOrder = 999;
-      basket.add(m);
+    /** The deal under a poster hit (uv: 0..1, v up), or null for the title / gaps. */
+    const dealAt = (uv: THREE.Vector2 | undefined) => {
+      if (!uv) return null;
+      const cy = (1 - uv.y) * POSTER.h - POSTER.rowTop;
+      if (cy < 0) return null;
+      const row = Math.floor(cy / POSTER.rowH);
+      return cy - row * POSTER.rowH <= POSTER.rowBox ? (deals[row] ?? null) : null;
     };
-    addPart(0.36, 0.03, 0.24, 0, 0, 0);
-    addPart(0.36, 0.14, 0.02, 0, 0.085, 0.12);
-    addPart(0.36, 0.14, 0.02, 0, 0.085, -0.12);
-    addPart(0.02, 0.14, 0.24, 0.18, 0.085, 0);
-    addPart(0.02, 0.14, 0.24, -0.18, 0.085, 0);
-    const handle = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.011, 8, 24, Math.PI), basketMat);
-    handle.position.y = 0.155;
-    handle.renderOrder = 999;
-    basket.add(handle);
-    const basketItems = new THREE.Group();
-    basketItems.position.y = 0.03;
-    basket.add(basketItems);
-    camera.add(basket);
+
+    // ---------------------------------------------------------------- the trolley (child of the rig, so you can look into it)
+    const trolley = new THREE.Group();
+    rig.add(trolley);
+    const chrome = new THREE.MeshStandardMaterial({ color: 0xb8c0c8, metalness: 0.6, roughness: 0.35 });
+    const plastic = new THREE.MeshStandardMaterial({ color: 0xd9482b });
+    const grid = new THREE.MeshStandardMaterial({ color: 0xdfe5ea, transparent: true, opacity: 0.28, depthWrite: false });
+    const BW = 0.56;
+    const BCZ = -0.92; // basket center (forward = -z)
+    const BL = 0.8;
+    const Y0 = 0.56; // basket floor
+    const Y1 = 0.92; // basket rim
+    const part = (m: THREE.Material, w: number, h: number, d: number, x: number, y: number, z: number) => {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+      mesh.position.set(x, y, z);
+      trolley.add(mesh);
+      return mesh;
+    };
+    part(grid, BW, 0.01, BL, 0, Y0, BCZ); // floor
+    part(grid, BW, Y1 - Y0, 0.01, 0, (Y0 + Y1) / 2, BCZ - BL / 2); // front
+    part(grid, BW, Y1 - Y0, 0.01, 0, (Y0 + Y1) / 2, BCZ + BL / 2); // back
+    part(grid, 0.01, Y1 - Y0, BL, BW / 2, (Y0 + Y1) / 2, BCZ); // sides
+    part(grid, 0.01, Y1 - Y0, BL, -BW / 2, (Y0 + Y1) / 2, BCZ);
+    for (const sx of [-1, 1]) {
+      part(chrome, 0.022, 0.022, BL, (sx * BW) / 2, Y1, BCZ); // rim rails
+      for (const sz of [-1, 1]) part(chrome, 0.022, Y1 - Y0, 0.022, (sx * BW) / 2, (Y0 + Y1) / 2, BCZ + (sz * BL) / 2); // corner posts
+    }
+    part(chrome, BW, 0.022, 0.022, 0, Y1, BCZ - BL / 2);
+    part(chrome, BW, 0.022, 0.022, 0, Y1, BCZ + BL / 2);
+    part(plastic, BW + 0.08, 0.04, 0.04, 0, 0.99, BCZ + BL / 2 - 0.1); // push handle
+    for (const sx of [-1, 1]) part(chrome, 0.022, 0.1, 0.022, (sx * BW) / 2, 0.94, BCZ + BL / 2 - 0.1); // handle posts
+    const wheels: THREE.Group[] = [];
+    for (const sx of [-1, 1])
+      for (const sz of [-1, 1]) {
+        const wz = BCZ + (sz * (BL - 0.18)) / 2;
+        part(chrome, 0.022, Y0 - 0.1, 0.022, (sx * (BW - 0.1)) / 2, (Y0 + 0.1) / 2, wz); // legs
+        const wg = new THREE.Group();
+        wg.position.set((sx * (BW - 0.1)) / 2, 0.06, wz);
+        const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.035, 14), mat(0x2b2f33));
+        wheel.rotation.z = Math.PI / 2;
+        wg.add(wheel);
+        trolley.add(wg);
+        wheels.push(wg);
+      }
+
+    const trolleyItems = new THREE.Group();
+    trolleyItems.position.set(0, Y0 + 0.005, BCZ);
+    trolley.add(trolleyItems);
 
     const unitBox = new THREE.BoxGeometry(1, 1, 1);
-    const renderBasket = () => {
-      for (const c of [...basketItems.children]) {
+    const renderTrolley = () => {
+      for (const c of [...trolleyItems.children]) {
         ((c as THREE.Mesh).material as THREE.Material).dispose();
-        basketItems.remove(c);
+        trolleyItems.remove(c);
       }
       const ids: number[] = [];
       for (const i of useCart.getState().items) for (let q = 0; q < Math.min(i.qty, 3); q++) ids.push(i.productId);
-      ids.slice(0, 14).forEach((id, k) => {
-        const m = new THREE.Mesh(unitBox, new THREE.MeshStandardMaterial({ color: new THREE.Color(`hsl(${hue(id)}, 55%, 62%)`), depthTest: false }));
-        const col = k % 4;
-        const row = Math.floor(k / 4) % 2;
-        const layer = Math.floor(k / 8);
-        m.scale.set(0.07, 0.09 + (id % 3) * 0.015, 0.06);
-        m.position.set(-0.12 + col * 0.08, 0.06 + layer * 0.09, -0.04 + row * 0.08);
+      ids.slice(0, 30).forEach((id, k) => {
+        const m = new THREE.Mesh(unitBox, new THREE.MeshStandardMaterial({ color: new THREE.Color(`hsl(${hue(id)}, 55%, 62%)`) }));
+        const col = k % 3;
+        const row = Math.floor(k / 3) % 5;
+        const layer = Math.floor(k / 15);
+        const h = 0.16 + (id % 3) * 0.03;
+        m.scale.set(0.14, h, 0.11);
+        m.position.set(-0.17 + col * 0.17, h / 2 + layer * 0.19, -BL / 2 + 0.1 + row * 0.15);
         m.rotation.y = ((id * 37 + k * 11) % 40) / 100 - 0.2;
-        m.renderOrder = 1000;
-        basketItems.add(m);
+        trolleyItems.add(m);
       });
     };
 
     type Flyer = { mesh: THREE.Mesh; t0: number };
     const flyers: Flyer[] = [];
     const FLY_MS = 380;
-    const FROM = new THREE.Vector3(0, -0.02, -0.55);
-    const TO = new THREE.Vector3(0.3, -0.2, -0.72);
+    const FROM = new THREE.Vector3(0.1, 1.25, -0.45);
+    const TO = new THREE.Vector3(0, Y0 + 0.2, BCZ);
     const spawnFlyer = (productId: number) => {
-      const mesh = new THREE.Mesh(unitBox, new THREE.MeshStandardMaterial({ color: new THREE.Color(`hsl(${hue(productId)}, 55%, 62%)`), depthTest: false }));
-      mesh.scale.set(0.09, 0.11, 0.07);
-      mesh.renderOrder = 1001;
+      const mesh = new THREE.Mesh(unitBox, new THREE.MeshStandardMaterial({ color: new THREE.Color(`hsl(${hue(productId)}, 55%, 62%)`) }));
+      mesh.scale.set(0.14, 0.18, 0.11);
       mesh.position.copy(FROM);
-      camera.add(mesh);
+      rig.add(mesh);
       flyers.push({ mesh, t0: performance.now() });
     };
 
@@ -636,7 +730,7 @@ export default function Shop3D({
     let ready = false; // ignore the cart being restored from storage at load
     const readyTimer = setTimeout(() => (ready = true), 900);
     let prevCart = new Map(useCart.getState().items.map((i) => [i.productId, i.qty]));
-    renderBasket();
+    renderTrolley();
     const unsub = useCart.subscribe((s) => {
       const cur = new Map(s.items.map((i) => [i.productId, i.qty]));
       let added: number | null = null;
@@ -644,16 +738,22 @@ export default function Shop3D({
       prevCart = cur;
       if (added != null && ready) beep();
       if (added != null && ready && !reduce) spawnFlyer(added);
-      else renderBasket();
+      else renderTrolley();
     });
 
-    // ---------------------------------------------------------------- player + movement
+    // ---------------------------------------------------------------- the trolley's motion
     const pos = { x: lay.start.x, z: lay.start.z };
-    let yaw = 0;
-    let pitch = -0.08;
-    let yawGoal: number | null = null;
+    let heading = 0; // where the trolley points (0 = toward the back wall)
+    let look = 0; // where the head looks, relative to the heading
+    let pitch = -0.35; // slightly down, so the trolley is in view
+    let v = 0; // forward speed, m/s (negative = reversing)
+    let headGoal: number | null = null;
+    let lookGoal: number | null = null;
     let path: { x: number; z: number }[] = [];
-    let finalYaw: number | null = null;
+    let endHeading: number | null = null;
+    let endLook: number | null = null;
+    let pendingCheckout = false;
+    let lastLookInput = 0;
 
     // orange dots on the floor showing the way while the assistant guides you
     const trail = new THREE.Group();
@@ -682,9 +782,12 @@ export default function Shop3D({
       if (x < -W / 2 + 0.5 || x > W / 2 - 0.5 || z < -D / 2 + 0.5 || z > D / 2 - 0.5) return true;
       return lay.obstacles.some((b) => x > b.minX - RADIUS && x < b.maxX + RADIUS && z > b.minZ - RADIUS && z < b.maxZ + RADIUS);
     };
-    const tryMove = (nx: number, nz: number) => {
-      if (!blocked(nx, pos.z)) pos.x = nx;
-      if (!blocked(pos.x, nz)) pos.z = nz;
+    /** The trolley is long: check the body and its front end, so the basket never goes through a shelf. */
+    const blockedAt = (x: number, z: number, h: number) => blocked(x, z) || blocked(x - Math.sin(h) * FRONT, z - Math.cos(h) * FRONT);
+    const turnTo = (h: number) => {
+      if (blockedAt(pos.x, pos.z, h)) return false;
+      heading = h;
+      return true;
     };
 
     const walkCenters = Array.from({ length: n + 1 }, (_, k) => (k - n / 2) * SPACING);
@@ -695,13 +798,14 @@ export default function Shop3D({
       return Math.abs(x - c) <= (SPACING - GOND_D) / 2 ? c : null;
     };
 
-    /** Walk to (tx,tz) using the corridors, so the straight line never cuts through a shelf. */
-    const routeTo = (tx: number, tz: number, endYaw: number | null = null, guided = false) => {
+    /** Drive to (tx,tz) using the corridors, so the route never cuts through a shelf. Optionally park facing a heading/look. */
+    const routeTo = (tx: number, tz: number, eh: number | null = null, el2: number | null = null, guided = false) => {
       if (blocked(tx, tz)) return;
       if (reduce) {
         pos.x = tx;
         pos.z = tz;
-        if (endYaw != null) yaw = endYaw;
+        if (eh != null) heading = eh;
+        if (el2 != null) look = el2;
         path = [];
         return;
       }
@@ -739,18 +843,32 @@ export default function Shop3D({
         } else push(tx, tz);
       }
       path = pts;
-      finalYaw = endYaw;
-      yawGoal = null;
+      endHeading = eh;
+      endLook = el2;
+      headGoal = null;
+      lookGoal = null;
       if (guided) buildTrail(pts);
       else clearTrail();
     };
 
+    /** Park in the walkway beside a shelf: trolley along the aisle, head turned toward the shelf. */
     const goAisle = (i: number, side: 1 | -1 = 1, z = GZ, guided = false) => {
       const g = lay.gondolas[i];
       if (!g) return;
-      routeTo(g.gx + side * (SPACING / 2), z, side === 1 ? Math.PI / 2 : -Math.PI / 2, guided);
+      routeTo(g.gx + side * (SPACING / 2), z, 0, side === 1 ? Math.PI / 2 : -Math.PI / 2, guided);
     };
-    const goHome = () => routeTo(lay.start.x, lay.start.z, 0);
+    const goTo = (place: 'entrance' | 'deals' | 'counter', openCheckout = false) => {
+      pendingCheckout = false;
+      if (place === 'entrance') routeTo(lay.start.x, lay.start.z, 0, 0);
+      else if (place === 'deals') routeTo(lay.posterX, -D / 2 + 2.4, 0, 0);
+      else {
+        routeTo(lay.counterC.x, lay.counterC.z - 2.0, Math.PI, 0); // facing the counter
+        if (openCheckout) {
+          if (reduce || !path.length) openCheckoutRef.current();
+          else pendingCheckout = true;
+        }
+      }
+    };
 
     // arrow above the product the assistant is guiding you to
     let beacon: THREE.Mesh | null = null;
@@ -761,7 +879,7 @@ export default function Shop3D({
       if (!box) return false;
       const wp = new THREE.Vector3();
       box.getWorldPosition(wp);
-      goAisle(box.userData.aisle as number, box.userData.side as 1 | -1, wp.z, true); // stand right in front of it
+      goAisle(box.userData.aisle as number, box.userData.side as 1 | -1, wp.z, true); // stop right in front of it
       if (!beacon) {
         beacon = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.24, 14), new THREE.MeshBasicMaterial({ color: 0xe08600 }));
         beacon.rotation.x = Math.PI; // tip pointing down
@@ -797,14 +915,25 @@ export default function Shop3D({
       for (const g of lay.gondolas) ctx.fillRect(X(g.minX), Z(g.minZ), (g.maxX - g.minX) * s, (g.maxZ - g.minZ) * s);
       ctx.fillStyle = '#e08600';
       ctx.fillRect(X(lay.counter.minX), Z(lay.counter.minZ), (lay.counter.maxX - lay.counter.minX) * s, (lay.counter.maxZ - lay.counter.minZ) * s);
-      // player
+      if (deals.length) {
+        ctx.fillStyle = '#d32f2f';
+        ctx.fillRect(X(lay.posterX) - 7, Z(-D / 2), 14, 3);
+      }
       const px = X(pos.x);
       const pz = Z(pos.z);
+      // trolley (gray) and view direction (red)
+      ctx.strokeStyle = '#475569';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(px, pz);
+      ctx.lineTo(px - Math.sin(heading) * 9, pz - Math.cos(heading) * 9);
+      ctx.stroke();
+      const view = heading + look;
       ctx.strokeStyle = '#d32f2f';
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(px, pz);
-      ctx.lineTo(px - Math.sin(yaw) * 11, pz - Math.cos(yaw) * 11);
+      ctx.lineTo(px - Math.sin(view) * 13, pz - Math.cos(view) * 13);
       ctx.stroke();
       ctx.fillStyle = '#d32f2f';
       ctx.beginPath();
@@ -822,10 +951,10 @@ export default function Shop3D({
     ctrl.current = {
       guide,
       goAisle,
-      goHome,
+      goTo,
       mapClick,
-      setLow: (v) => {
-        lowQ = v;
+      setLow: (val) => {
+        lowQ = val;
         applyRatio();
         resize();
       },
@@ -843,7 +972,7 @@ export default function Shop3D({
     const ro = new ResizeObserver(resize);
     ro.observe(mount);
 
-    // ---------------------------------------------------------------- input: look (drag), tap (pick / walk), hover
+    // ---------------------------------------------------------------- input: look (drag), tap (pick / drive), hover
     const ray = new THREE.Raycaster();
     const ndc = new THREE.Vector2();
     const cast = (e: PointerEvent) => {
@@ -857,16 +986,17 @@ export default function Shop3D({
       cast(e);
       const hit = ray.intersectObjects(pickables, false)[0];
       const obj = (hit?.object as THREE.Mesh | undefined) ?? null;
+      const deal = obj?.userData.poster ? dealAt(hit?.uv) : null;
       if (obj !== hovered) {
         hovered?.scale.setScalar(1);
         hovered = obj;
         if (obj?.userData.product) obj.scale.setScalar(1.05);
-        el.style.cursor = obj ? 'pointer' : 'grab';
       }
-      const key = obj ? (obj.userData.checkout ? 'checkout' : String(obj.userData.product.id)) : '';
+      el.style.cursor = obj && (!obj.userData.poster || deal) ? 'pointer' : 'grab';
+      const key = !obj ? '' : obj.userData.checkout ? 'checkout' : obj.userData.poster ? `deal-${deal?.id ?? 0}` : String(obj.userData.product.id);
       if (key !== hoverKey) {
         hoverKey = key;
-        setHover(!obj ? null : obj.userData.checkout ? counterLabel : (obj.userData.product as ProductListItem).name);
+        setHover(!obj ? null : obj.userData.checkout ? counterLabel : obj.userData.poster ? (deal?.name ?? null) : (obj.userData.product as ProductListItem).name);
       }
     };
     const onTap = (e: PointerEvent) => {
@@ -875,11 +1005,19 @@ export default function Shop3D({
       if (hit) {
         const u = hit.object.userData;
         if (u.checkout) {
-          routerRef.current.push('/checkout');
+          goTo('counter', true); // drive to the counter and open the checkout there
+          return;
+        }
+        if (u.poster) {
+          const deal = dealAt(hit.uv);
+          if (deal) {
+            setSelected(deal);
+            if (hit.distance > 6) goTo('deals');
+          }
           return;
         }
         setSelected(u.product as ProductListItem);
-        if (hit.distance > 5) goAisle(u.aisle as number, u.side as 1 | -1); // too far to reach: walk over
+        if (hit.distance > 5) goAisle(u.aisle as number, u.side as 1 | -1); // too far to reach: drive over
         return;
       }
       setSelected(null);
@@ -888,25 +1026,25 @@ export default function Shop3D({
     };
 
     let drag: { id: number; x: number; y: number; sx: number; sy: number; moved: boolean } | null = null;
-    const dismissHelp = () => setHelp(false);
     const onDown = (e: PointerEvent) => {
+      if (blockedRef.current) return;
       drag = { id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, moved: false };
       el.setPointerCapture(e.pointerId);
-      dismissHelp();
     };
     const onMove = (e: PointerEvent) => {
       if (drag && drag.id === e.pointerId) {
         if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 5) drag.moved = true;
         if (drag.moved) {
-          // the world follows the finger: dragging right turns the view left
-          yaw += (e.clientX - drag.x) * 0.0045;
-          pitch = Math.max(-0.9, Math.min(0.9, pitch + (e.clientY - drag.y) * 0.0045));
-          yawGoal = null;
+          // the world follows the finger: dragging right turns the head left
+          look = wrapPi(look + (e.clientX - drag.x) * 0.0045);
+          pitch = Math.max(-1.1, Math.min(0.8, pitch + (e.clientY - drag.y) * 0.0045));
+          lookGoal = null;
+          lastLookInput = performance.now();
           el.style.cursor = 'grabbing';
         }
         drag.x = e.clientX;
         drag.y = e.clientY;
-      } else if (e.pointerType === 'mouse') onHover(e);
+      } else if (e.pointerType === 'mouse' && !blockedRef.current) onHover(e);
     };
     const onUp = (e: PointerEvent) => {
       if (drag && drag.id === e.pointerId && !drag.moved) onTap(e);
@@ -919,16 +1057,17 @@ export default function Shop3D({
     el.addEventListener('pointercancel', onUp);
 
     // ---------------------------------------------------------------- input: keyboard
+    // W/S drive, A/D and the left/right arrows steer, C re-centers the view
     const MAP: Record<string, string> = {
-      w: 'f', W: 'f', ArrowUp: 'f', s: 'b', S: 'b', ArrowDown: 'b', a: 'l', A: 'l', d: 'r', D: 'r', ArrowLeft: 'tl', ArrowRight: 'tr',
+      w: 'f', W: 'f', ArrowUp: 'f', s: 'b', S: 'b', ArrowDown: 'b',
+      a: 'tl', A: 'tl', ArrowLeft: 'tl', d: 'tr', D: 'tr', ArrowRight: 'tr', c: 'c', C: 'c',
     };
     const typing = (e: KeyboardEvent) => !!(e.target as HTMLElement | null)?.closest('input, textarea, select, [contenteditable="true"]');
     const onKeyDown = (e: KeyboardEvent) => {
       const k = MAP[e.key];
-      if (!k || typing(e) || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (!k || typing(e) || blockedRef.current || e.ctrlKey || e.metaKey || e.altKey) return;
       e.preventDefault();
       keys.current.add(k);
-      dismissHelp();
     };
     const onKeyUp = (e: KeyboardEvent) => {
       const k = MAP[e.key];
@@ -950,76 +1089,107 @@ export default function Shop3D({
       const dt = Math.min((now - last) / 1000, 0.05);
       last = now;
       const k = keys.current;
+      const live = !blockedRef.current;
 
-      // turning with the arrow keys
-      const turn = (k.has('tl') ? 1 : 0) - (k.has('tr') ? 1 : 0);
-      if (turn) {
-        yaw += turn * 1.9 * dt;
-        yawGoal = null;
+      const steer = live ? (k.has('tl') ? 1 : 0) - (k.has('tr') ? 1 : 0) : 0;
+      const drive = live ? (k.has('f') ? 1 : 0) - (k.has('b') ? 1 : 0) : 0;
+      if (live && k.has('c')) {
+        lookGoal = 0;
+        k.delete('c');
       }
 
-      // walking
-      const f = (k.has('f') ? 1 : 0) - (k.has('b') ? 1 : 0);
-      const r = (k.has('r') ? 1 : 0) - (k.has('l') ? 1 : 0);
-      let moving = false;
-      if (f || r) {
+      let target = 0; // the speed we want
+      if (drive) {
         path = [];
         clearTrail();
-        const len = Math.hypot(f, r);
-        const fx = -Math.sin(yaw);
-        const fz = -Math.cos(yaw);
-        const rx = Math.cos(yaw);
-        const rz = -Math.sin(yaw);
-        tryMove(pos.x + ((fx * f + rx * r) / len) * SPEED * dt, pos.z + ((fz * f + rz * r) / len) * SPEED * dt);
-        moving = true;
+        pendingCheckout = false;
+        headGoal = null;
+        target = drive > 0 ? SPEED : -SPEED * 0.55;
+        // while driving forward the head slowly returns to the front, unless the customer is looking around
+        if (drive > 0 && now - lastLookInput > 1500 && lookGoal == null) look -= look * Math.min(1, dt * 1.6);
       } else if (path.length) {
         const head = path[0];
         const dx = head.x - pos.x;
         const dz = head.z - pos.z;
         const d = Math.hypot(dx, dz);
-        if (d < 0.12) {
+        if (d < 0.25) {
           path.shift();
           if (!path.length) {
             clearTrail();
-            if (finalYaw != null) yawGoal = finalYaw;
+            headGoal = endHeading;
+            lookGoal = endLook ?? 0;
+            if (pendingCheckout) {
+              pendingCheckout = false;
+              openCheckoutRef.current();
+            }
           }
         } else {
-          const step = Math.min(d, SPEED * dt);
-          const bx = pos.x;
-          const bz = pos.z;
-          tryMove(pos.x + (dx / d) * step, pos.z + (dz / d) * step);
-          moving = true;
-          stuck = Math.hypot(pos.x - bx, pos.z - bz) < step * 0.2 ? stuck + 1 : 0;
-          if (stuck > 12) {
-            path = []; // wedged against something: give up this walk
-            clearTrail();
-            stuck = 0;
-          }
+          // steer toward the waypoint like a real trolley: turn first when the angle is large, then drive
+          const diff = wrapPi(Math.atan2(-dx, -dz) - heading);
+          turnTo(heading + diff * Math.min(1, dt * 5));
+          target = Math.abs(diff) > 1.1 ? 0 : SPEED * Math.max(0.25, Math.cos(diff));
+          look -= look * Math.min(1, dt * 2.5); // look where we go
         }
       }
 
-      if (yawGoal != null) {
-        let diff = ((yawGoal - yaw + Math.PI) % (Math.PI * 2)) - Math.PI;
-        if (diff < -Math.PI) diff += Math.PI * 2;
-        yaw += diff * Math.min(1, dt * 6);
-        pitch *= 1 - Math.min(1, dt * 4);
-        if (Math.abs(diff) < 0.01) yawGoal = null;
+      // steering with the keys: faster while rolling, slow in place
+      if (steer) {
+        headGoal = null;
+        const rate = 1.7 * (0.45 + 0.55 * Math.min(1, Math.abs(v) / SPEED));
+        turnTo(heading + steer * rate * dt);
       }
 
-      camera.position.set(pos.x, EYE + (moving && !reduce ? Math.sin(now / 110) * 0.022 : 0), pos.z);
-      camera.rotation.set(pitch, yaw, 0);
+      // parking: ease into the final heading and look
+      if (headGoal != null) {
+        const diff = wrapPi(headGoal - heading);
+        if (!turnTo(heading + diff * Math.min(1, dt * 4)) || Math.abs(diff) < 0.01) headGoal = null;
+      }
+      if (lookGoal != null) {
+        const diff = wrapPi(lookGoal - look);
+        look = wrapPi(look + diff * Math.min(1, dt * 4));
+        if (Math.abs(diff) < 0.01) lookGoal = null;
+      }
+      if (headGoal != null || lookGoal != null) pitch += (-0.3 - pitch) * Math.min(1, dt * 2.5);
 
-      // items dropping into the basket
+      // inertia: the trolley speeds up and rolls on a little when you let go
+      v += (target - v) * Math.min(1, dt * (target === 0 ? 4 : 3));
+      if (Math.abs(v) < 0.01) v = 0;
+      if (v !== 0) {
+        const bx = pos.x;
+        const bz = pos.z;
+        const nx = pos.x - Math.sin(heading) * v * dt;
+        const nz = pos.z - Math.cos(heading) * v * dt;
+        if (!blockedAt(nx, pos.z, heading)) pos.x = nx;
+        if (!blockedAt(pos.x, nz, heading)) pos.z = nz;
+        const moved = Math.hypot(pos.x - bx, pos.z - bz);
+        if (moved < Math.abs(v) * dt * 0.2) {
+          v *= 0.5; // pressing against something: lose speed
+          if (path.length && target > 0 && ++stuck > 20) {
+            path = []; // wedged: give up this drive
+            clearTrail();
+            pendingCheckout = false;
+            stuck = 0;
+          }
+        } else stuck = 0;
+      }
+      for (const w of wheels) w.rotation.x -= (v * dt) / 0.06;
+
+      rig.position.set(pos.x, 0, pos.z);
+      rig.rotation.y = heading;
+      camera.position.set(0, EYE + (Math.abs(v) > 0.3 && !reduce ? Math.sin(now / 110) * 0.015 : 0), 0);
+      camera.rotation.set(pitch, look, 0);
+
+      // items dropping into the trolley
       for (let i = flyers.length - 1; i >= 0; i--) {
         const fl = flyers[i];
         const kk = Math.min((now - fl.t0) / FLY_MS, 1);
         fl.mesh.position.lerpVectors(FROM, TO, kk);
-        fl.mesh.position.y += Math.sin(kk * Math.PI) * 0.16;
+        fl.mesh.position.y += Math.sin(kk * Math.PI) * 0.18;
         if (kk >= 1) {
-          camera.remove(fl.mesh);
+          rig.remove(fl.mesh);
           (fl.mesh.material as THREE.Material).dispose();
           flyers.splice(i, 1);
-          renderBasket();
+          renderTrolley();
         }
       }
 
@@ -1070,7 +1240,7 @@ export default function Shop3D({
       renderer.dispose();
       el.remove();
     };
-  }, [aisles, locale, counterLabel, currency, dealsTitle, storeName, logoUrl, findId]);
+  }, [aisles, locale, counterLabel, currency, dealsTitle, dealsHint, storeName, logoUrl, findId]);
 
   if (noWebgl) {
     return (
@@ -1087,19 +1257,22 @@ export default function Shop3D({
     onPointerDown: (e: React.PointerEvent) => {
       e.preventDefault();
       keys.current.add(k);
-      setHelp(false);
     },
     onPointerUp: () => keys.current.delete(k),
     onPointerLeave: () => keys.current.delete(k),
     onPointerCancel: () => keys.current.delete(k),
   });
   const pad = 'grid h-12 w-12 select-none place-items-center rounded-md bg-white/90 text-lg font-bold text-slate-700 shadow active:bg-brand-100';
+  const tip = cartCount === 0 ? t('tipPick') : t('tipCheckout');
 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" onClick={() => ctrl.current?.goHome()} className="btn-outline h-9">
+        <button type="button" onClick={() => ctrl.current?.goTo('entrance')} className="btn-outline h-9">
           {t('entrance')}
+        </button>
+        <button type="button" onClick={() => ctrl.current?.goTo('deals')} className="btn-outline h-9">
+          {t('dealsTitle')}
         </button>
         {aisles.map((a, i) => (
           <button key={a.id} type="button" onClick={() => ctrl.current?.goAisle(i)} className="btn-outline h-9">
@@ -1117,13 +1290,7 @@ export default function Shop3D({
             }
           }}
         >
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t('findPlaceholder')}
-            aria-label={t('find')}
-            className="input h-9"
-          />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('findPlaceholder')} aria-label={t('find')} className="input h-9" />
           {norm(query).length >= 2 && (
             <ul className="absolute inset-x-0 top-full z-30 mt-1 overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg">
               {results.length === 0 && <li className="px-3 py-2 text-sm text-slate-500">{t('noMatch')}</li>}
@@ -1146,6 +1313,9 @@ export default function Shop3D({
             </ul>
           )}
         </form>
+        <button type="button" onClick={() => setTour(0)} className="h-9 rounded-md border border-accent-500 bg-accent-50 px-3 text-xs font-bold text-accent-600">
+          ? {t('helpButton')}
+        </button>
         <button type="button" onClick={() => setSound((v) => !v)} aria-pressed={sound} className={`h-9 rounded-md border px-3 text-xs font-bold ${sound ? 'border-brand-600 bg-brand-50 text-brand-700' : 'border-slate-300 bg-white text-slate-600'}`}>
           {sound ? t('soundOn') : t('soundOff')}
         </button>
@@ -1180,28 +1350,44 @@ export default function Shop3D({
             ⏱ {minSec(remainingSeconds, locale)}
           </div>
         )}
+
         <div className="pointer-events-none absolute start-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/90 ring-1 ring-black/40" aria-hidden />
 
         {notice && (
-          <p className="absolute inset-x-3 bottom-16 mx-auto max-w-md rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 shadow">
-            {t('notOnShelf')}
-          </p>
+          <p className="absolute inset-x-3 bottom-16 mx-auto max-w-md rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 shadow">{t('notOnShelf')}</p>
         )}
 
         {hover && <p className="pointer-events-none absolute bottom-3 start-1/2 max-w-[60%] -translate-x-1/2 truncate rounded bg-slate-900/80 px-3 py-1 text-sm text-white">{hover}</p>}
 
-        {help && (
-          <div className="absolute inset-x-3 top-3 mx-auto max-w-md rounded-md border border-slate-300 bg-white/95 p-3 text-sm shadow-lg">
-            <p className="mb-1 font-bold">{t('helpTitle')}</p>
-            <ul className="space-y-0.5 text-slate-600">
-              <li>• {t('helpMove')}</li>
-              <li>• {t('helpLook')}</li>
-              <li>• {t('helpWalk')}</li>
-              <li>• {t('helpPick')}</li>
-            </ul>
-            <button type="button" onClick={() => setHelp(false)} className="btn mt-2 h-8 px-3 text-xs">
-              {t('gotIt')}
-            </button>
+        {/* contextual tip (hidden on touch screens, where the on-screen buttons take that corner) */}
+        {tour === null && (
+          <p className="pointer-events-none absolute bottom-3 start-3 max-w-[40%] rounded bg-white/90 px-3 py-1.5 text-xs text-slate-700 shadow [@media(pointer:coarse)]:hidden">💡 {tip}</p>
+        )}
+
+        {/* guided tour: the steps that talk about a place drive the trolley there */}
+        {tour !== null && (
+          <div role="dialog" aria-label={t('helpButton')} className="absolute inset-x-3 bottom-3 z-20 mx-auto max-w-md rounded-md border border-slate-300 bg-white p-4 shadow-xl">
+            <div className="mb-1 flex items-center justify-between text-xs text-slate-500">
+              <span>{t('tourStep', { n: tour + 1, total: TOUR_STEPS })}</span>
+              <button type="button" onClick={endTour} className="font-bold text-slate-500 hover:text-slate-800">
+                {t('tourSkip')}
+              </button>
+            </div>
+            <h3 className="font-extrabold">{t(`tour${tour + 1}Title`)}</h3>
+            <p className="mt-1 text-sm leading-7 text-slate-600">{t(`tour${tour + 1}Text`)}</p>
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <button type="button" className="btn-outline h-9 px-3 text-xs" disabled={tour === 0} onClick={() => setTour(tour - 1)}>
+                {t('tourPrev')}
+              </button>
+              <div className="flex gap-1" aria-hidden>
+                {Array.from({ length: TOUR_STEPS }, (_, i) => (
+                  <span key={i} className={`h-1.5 w-4 rounded-sm ${i === tour ? 'bg-brand-600' : 'bg-slate-300'}`} />
+                ))}
+              </div>
+              <button type="button" className="btn h-9 px-3 text-xs" onClick={() => (tour >= TOUR_STEPS - 1 ? endTour() : setTour(tour + 1))}>
+                {tour >= TOUR_STEPS - 1 ? t('tourDone') : t('tourNext')}
+              </button>
+            </div>
           </div>
         )}
 
@@ -1223,7 +1409,7 @@ export default function Shop3D({
 
         {/* touch controls: only on devices whose main input is a finger */}
         <div className="absolute bottom-3 start-3 hidden grid-cols-3 gap-1 [@media(pointer:coarse)]:grid">
-          <span />
+          <button type="button" aria-label={t('recenter')} title={t('recenter')} className={pad} {...press('c')}>●</button>
           <button type="button" aria-label={t('forward')} className={pad} {...press('f')}>▲</button>
           <span />
           <button type="button" aria-label={t('turnLeft')} className={pad} {...press('tl')}>◀</button>
@@ -1268,12 +1454,44 @@ export default function Shop3D({
               )}
             </span>
             {cartCount > 0 && (
-              <Link href="/checkout" className="rounded bg-white px-2.5 py-1 text-xs font-bold text-brand-800">
+              <button type="button" onClick={() => ctrl.current?.goTo('counter', true)} className="rounded bg-white px-2.5 py-1 text-xs font-bold text-brand-800">
                 {t('checkout')}
-              </Link>
+              </button>
             )}
           </div>
         </div>
+
+        {/* checkout at the counter, without leaving the store */}
+        {checkoutOpen && (
+          <div className="absolute inset-0 z-30 flex items-start justify-center overflow-y-auto bg-black/45 p-3 sm:items-center" onMouseDown={(e) => e.target === e.currentTarget && setCheckoutOpen(false)}>
+            <div role="dialog" aria-modal="true" aria-label={t('checkoutTitle')} className="w-full max-w-3xl rounded-md bg-white p-4 shadow-2xl">
+              <div className="mb-3 flex items-center justify-between border-b border-slate-200 pb-2">
+                <h2 className="text-lg font-extrabold">🧾 {t('checkoutTitle')}</h2>
+                <button type="button" onClick={() => setCheckoutOpen(false)} aria-label={t('close')} className="grid h-8 w-8 place-items-center rounded-md hover:bg-slate-100">
+                  <CloseIcon className="h-5 w-5" />
+                </button>
+              </div>
+
+              {cartItems.length > 0 && (
+                <div className="mb-4">
+                  <h3 className="mb-2 text-sm font-bold">{t('checkoutReview')}</h3>
+                  <ul className="divide-y divide-slate-100 rounded-md border border-slate-200">
+                    {cartItems.map((i) => (
+                      <li key={i.productId} className="flex items-center justify-between gap-3 p-2">
+                        <span className="line-clamp-1 text-sm">{i.name}</span>
+                        <span className="w-36 shrink-0">
+                          <AddToCart size="compact" productId={i.productId} slug={i.slug} name={i.name} price={i.price} image={i.image} stock={100} />
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <CheckoutForm />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

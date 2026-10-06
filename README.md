@@ -133,6 +133,17 @@ switch back to the plugin (snippet in the comment inside `next.config.ts`).
 - **Shop logo** (Settings → Site information): upload an image; it replaces the letter badge in the header, appears in
   the footer, and on the back-wall sign of the 3D store. Local uploads only. (PWA home-screen icons are separate files:
   regenerate `tools/make-icons.ps1` or replace `public/icons/*` to brand them.)
+- **Trolley driving (version 5):** you push a shopping trolley that mirrors the real cart (items appear inside; look down
+  to see them; wheels spin; items drop in when added). W/S drive, A/D or the arrows steer, the trolley has inertia and
+  its long front end collides with shelves. Dragging turns the *head*, not the trolley (it keeps its heading; the view
+  re-centers while you drive forward; C re-centers it). Click the floor/minimap and the trolley drives there on its own
+  through the corridors.
+- **Offers wall:** the poster's rows are clickable; a click selects that product (card with the add-to-cart control).
+- **Checkout inside the store:** clicking the counter (or the Checkout button in the trolley bar) drives to the counter
+  and opens the real checkout form, with editable item quantities, in an overlay. Only the payment-gateway redirect
+  leaves the page (fullscreen is exited first so the map prompt and payment page work).
+- **Guides:** a 6-step interactive tour (first visit, reopen with the "Help" button) that drives the trolley to the offers
+  wall and the counter while it explains them, plus a contextual tip line. The tour never blocks the controls.
 - 3D polish: fake contact shadows, a "special offers" poster built from the current discounts, fullscreen, and an optional
   chime (synthesized in the browser, no audio files) when an item goes into the basket.
 
