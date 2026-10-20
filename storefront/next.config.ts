@@ -26,8 +26,21 @@ const csp = [
   "frame-ancestors 'none'",
 ].join('; ');
 
+// Development only: Next.js 16 blocks dev scripts (including the JavaScript that makes pages interactive) for any
+// hostname other than localhost. Opening the dev site from a phone at http://<your-PC-ip>:3000 therefore shows the HTML but
+// no button works. List the hostnames/IPs you use (no scheme, no port). "*" matches exactly one label, so
+// "192.168.*.*" covers every address of a typical home/office network. Extra entries: DEV_ORIGINS="10.1.1.172,my-pc.local".
+// This setting has no effect in production builds.
+const devOrigins = [
+  '192.168.*.*',
+  '10.*.*.*',
+  '172.*.*.*',
+  ...(process.env.DEV_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
+];
+
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  allowedDevOrigins: devOrigins,
 
   // next-intl wiring WITHOUT the `next-intl/plugin` wrapper.
   // The plugin's only jobs are (1) aliasing 'next-intl/config' to the request config file and (2) exposing

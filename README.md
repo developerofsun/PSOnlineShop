@@ -99,6 +99,18 @@ Adding to the cart has no flying animation. The "Add" button turns into a − / 
 cart shows the running total, the cart opens as a slide-in **mini cart** (also on the mobile bottom bar), and only the
 count badge gives a tiny bump when it changes.
 
+## Testing on a phone
+
+Open the storefront from the phone at `http://<PC-ip>:3000` (the dev server prints it as "Network"). Both devices must be on
+the same network and the Windows firewall must allow Node on port 3000.
+- Storefront: Next.js 16 blocks dev scripts for non-localhost hostnames, so without `allowedDevOrigins` the page looks fine
+  but **no button works** (it never hydrates). `next.config.ts` allows the usual private ranges (192.168.*.*, 10.*.*.*,
+  172.*.*.*); add others with `DEV_ORIGINS="my-pc.local"`. Restart `npm run dev` after changing it. A production build
+  (`npm run build && npm start`) has no such restriction.
+- Admin (Vite) only listens on localhost by default: run `npm run dev -- --host`.
+- Camera/GPS features such as "use my location" and the install-as-app prompt need HTTPS (or localhost) on phones;
+  plain `http://<ip>` will not offer them.
+
 ## Next.js 16 notes
 
 The storefront targets Next.js 16 (Turbopack) and next-intl 4. Locale routing runs in `src/proxy.ts` (Next 16's name for
