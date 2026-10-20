@@ -11,6 +11,7 @@ import AddToCart from './AddToCart';
 import CheckoutForm from './CheckoutForm';
 import { CartIcon, CloseIcon } from './icons';
 import Price from './Price';
+import ProductImage from './ProductImage';
 
 export type Aisle = { id: number; name: string; products: ProductListItem[] };
 
@@ -31,10 +32,12 @@ const SPEED = 2.2;
 const MAX_PER_AISLE = 18;
 const TOUR_STEPS = 6;
 const TOUR_KEY = 'onshop-3d-tour';
+const FOV = { base: 70, min: 28, max: 85 }; // zoom = narrower field of view
 const POSTER = { w: 512, h: 410, rowTop: 94, rowH: 70, rowBox: 62, plane: [2.6, 2.08] as const };
 
 const hue = (id: number) => (id * 47) % 360;
 const wrapPi = (a: number) => ((((a + Math.PI) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) - Math.PI;
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 /** 07:05 style countdown with the page's digits. */
 const minSec = (total: number, locale: string) => {
@@ -282,13 +285,18 @@ type Ctrl = {
   goTo: (place: 'entrance' | 'deals' | 'counter', openCheckout?: boolean) => void;
   mapClick: (px: number, py: number) => void;
   setLow: (low: boolean) => void;
+  zoomBy: (factor: number) => void;
+  recenter: () => void;
 };
+
+type Sheet = 'aisles' | 'search' | 'map' | 'more' | null;
 
 /**
  * Walk-through 3D store where you push a shopping trolley.
- *  - W/S drive, A/D (or the arrows) steer, drag to look around (the trolley keeps its heading), C re-centers the view.
- *  - Click the floor or the minimap to be driven somewhere; click a product or a wall offer to pick it.
- *  - The trolley mirrors the real cart. The counter opens the checkout right inside the store.
+ *  Desktop: W/S drive, A/D (or the arrows) steer, drag to look, wheel or +/- to zoom, click the floor to be driven there.
+ *  Phone:   joystick to drive, drag to look, pinch to zoom, tap the floor to be driven there, and the bottom dock
+ *           (Aisles / Search / Offers / Map / More) so nothing needs precise aiming at tiny 3D objects.
+ *  The trolley mirrors the real cart. The counter opens the checkout right inside the store.
  */
 export default function Shop3D({
   aisles,
@@ -312,8 +320,12 @@ export default function Shop3D({
   const mountRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<HTMLCanvasElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
+  const joyBase = useRef<HTMLDivElement>(null);
+  const joyKnob = useRef<HTMLDivElement>(null);
+  const joyId = useRef<number | null>(null);
   const ctrl = useRef<Ctrl | null>(null);
   const keys = useRef(new Set<string>());
+  const analog = useRef({ drive: 0, steer: 0 }); // joystick: -1..1
 
   const [selected, setSelected] = useState<ProductListItem | null>(null);
   const [hover, setHover] = useState<string | null>(null);
@@ -323,18 +335,27 @@ export default function Shop3D({
   const [notice, setNotice] = useState(false);
   const [sound, setSound] = useState(false);
   const [fs, setFs] = useState(false);
+  const [coarse, setCoarse] = useState(false); // the main input is a finger
+  const [immersive, setImmersive] = useState(false); // full-window mode (works on iPhone, where real fullscreen does not)
+  const [sheet, setSheet] = useState<Sheet>(null);
+  const [currentAisle, setCurrentAisle] = useState(-1);
+  const [shelfAisle, setShelfAisle] = useState(0);
   const [tour, setTour] = useState<number | null>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
 
   const soundRef = useRef(false);
   soundRef.current = sound;
+  const coarseRef = useRef(false);
+  coarseRef.current = coarse;
   const blockedRef = useRef(false); // true while the checkout panel is open: the scene ignores input
   blockedRef.current = checkoutOpen;
   const openCheckoutRef = useRef<() => void>(() => {});
   openCheckoutRef.current = () => {
     if (document.fullscreenElement) void document.exitFullscreen(); // the map prompt and payment page need the normal view
     keys.current.clear();
+    analog.current = { drive: 0, steer: 0 };
     setSelected(null);
+    setSheet(null);
     setCheckoutOpen(true);
   };
 
@@ -348,15 +369,32 @@ export default function Shop3D({
 
   useEffect(() => ctrl.current?.setLow(low), [low]);
 
+  // phones: start in the full-window mode
+  useEffect(() => {
+    const c = window.matchMedia('(pointer: coarse)').matches;
+    setCoarse(c);
+    if (c) setImmersive(true);
+  }, []);
+  useEffect(() => {
+    if (!immersive) return;
+    const old = document.body.style.overflow;
+    document.body.style.overflow = 'hidden'; // the page behind must not scroll while the store is full-window
+    return () => {
+      document.body.style.overflow = old;
+    };
+  }, [immersive]);
+
   useEffect(() => {
     const on = () => setFs(document.fullscreenElement === stageRef.current);
     document.addEventListener('fullscreenchange', on);
     return () => document.removeEventListener('fullscreenchange', on);
   }, []);
-  const toggleFs = () => {
+  const toggleFull = () => {
+    if (coarse) return setImmersive((v) => !v);
     if (document.fullscreenElement) void document.exitFullscreen();
     else void stageRef.current?.requestFullscreen?.();
   };
+  const full = coarse ? immersive : fs;
 
   // first visit: start the guided tour
   useEffect(() => {
@@ -388,6 +426,11 @@ export default function Shop3D({
     return () => document.removeEventListener('keydown', onKey);
   }, [checkoutOpen]);
 
+  // while the aisle panel is closed it follows the aisle the trolley is in
+  useEffect(() => {
+    if (sheet !== 'aisles' && currentAisle >= 0) setShelfAisle(currentAisle);
+  }, [currentAisle, sheet]);
+
   // "Where is...?" search over the products on the shelves
   const results = useMemo(() => {
     const q = norm(query);
@@ -402,6 +445,13 @@ export default function Shop3D({
       }
     return out.slice(0, 6);
   }, [query, aisles]);
+
+  const guideTo = (id: number) => {
+    setNotice(false);
+    setSheet(null);
+    setQuery('');
+    ctrl.current?.guide(id);
+  };
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -420,7 +470,8 @@ export default function Shop3D({
     const lay: Layout = computeLayout(aisles);
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     let lowQ = false;
-    const applyRatio = () => renderer.setPixelRatio(lowQ ? 1 : Math.min(window.devicePixelRatio, 2));
+    // phones have 3x screens: cap the pixel ratio, it is the biggest speed-up there
+    const applyRatio = () => renderer.setPixelRatio(lowQ ? 1 : Math.min(window.devicePixelRatio, coarseRef.current ? 1.5 : 2));
     applyRatio();
     const el = renderer.domElement;
     el.style.display = 'block';
@@ -432,8 +483,9 @@ export default function Shop3D({
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xeef3ee);
     scene.fog = new THREE.Fog(0xeef3ee, 16, 42);
-    const camera = new THREE.PerspectiveCamera(70, 1, 0.05, 80);
+    const camera = new THREE.PerspectiveCamera(FOV.base, 1, 0.05, 80);
     camera.rotation.order = 'YXZ';
+    let fovTarget = FOV.base;
     // The "rig" is the trolley's frame of reference: it sits on the floor and turns with the trolley's heading.
     // The camera is the head on top of it (it can look around independently) and the trolley is its other child.
     const rig = new THREE.Group();
@@ -917,27 +969,27 @@ export default function Shop3D({
       ctx.fillRect(X(lay.counter.minX), Z(lay.counter.minZ), (lay.counter.maxX - lay.counter.minX) * s, (lay.counter.maxZ - lay.counter.minZ) * s);
       if (deals.length) {
         ctx.fillStyle = '#d32f2f';
-        ctx.fillRect(X(lay.posterX) - 7, Z(-D / 2), 14, 3);
+        ctx.fillRect(X(lay.posterX) - 14, Z(-D / 2), 28, 6);
       }
       const px = X(pos.x);
       const pz = Z(pos.z);
       // trolley (gray) and view direction (red)
       ctx.strokeStyle = '#475569';
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 6;
       ctx.beginPath();
       ctx.moveTo(px, pz);
-      ctx.lineTo(px - Math.sin(heading) * 9, pz - Math.cos(heading) * 9);
+      ctx.lineTo(px - Math.sin(heading) * 18, pz - Math.cos(heading) * 18);
       ctx.stroke();
       const view = heading + look;
       ctx.strokeStyle = '#d32f2f';
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 4;
       ctx.beginPath();
       ctx.moveTo(px, pz);
-      ctx.lineTo(px - Math.sin(view) * 13, pz - Math.cos(view) * 13);
+      ctx.lineTo(px - Math.sin(view) * 26, pz - Math.cos(view) * 26);
       ctx.stroke();
       ctx.fillStyle = '#d32f2f';
       ctx.beginPath();
-      ctx.arc(px, pz, 3.5, 0, Math.PI * 2);
+      ctx.arc(px, pz, 7, 0, Math.PI * 2);
       ctx.fill();
     };
     const mapClick = (px: number, py: number) => {
@@ -948,11 +1000,19 @@ export default function Shop3D({
       else routeTo(x, z);
     };
 
+    const zoomBy = (f: number) => {
+      fovTarget = clamp(fovTarget / f, FOV.min, FOV.max);
+    };
+
     ctrl.current = {
       guide,
       goAisle,
       goTo,
       mapClick,
+      zoomBy,
+      recenter: () => {
+        lookGoal = 0;
+      },
       setLow: (val) => {
         lowQ = val;
         applyRatio();
@@ -972,7 +1032,7 @@ export default function Shop3D({
     const ro = new ResizeObserver(resize);
     ro.observe(mount);
 
-    // ---------------------------------------------------------------- input: look (drag), tap (pick / drive), hover
+    // ---------------------------------------------------------------- input: look (drag), zoom (pinch/wheel), tap (pick / drive), hover
     const ray = new THREE.Raycaster();
     const ndc = new THREE.Vector2();
     const cast = (e: PointerEvent) => {
@@ -980,6 +1040,38 @@ export default function Shop3D({
       ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
       ray.setFromCamera(ndc, camera);
     };
+    /**
+     * Fingers are fat and shelf products are small: when a tap misses every product, pick the nearest product that faces
+     * the camera and is within ~36 px of the tap on screen.
+     */
+    const pickNear = (e: PointerEvent): THREE.Mesh | null => {
+      const r = el.getBoundingClientRect();
+      const tx = e.clientX - r.left;
+      const ty = e.clientY - r.top;
+      const cam = new THREE.Vector3();
+      camera.getWorldPosition(cam);
+      const p = new THREE.Vector3();
+      let best: THREE.Mesh | null = null;
+      let bestD = e.pointerType === 'mouse' ? 0 : 36;
+      for (const m of pickables) {
+        const u = m.userData;
+        if (!u.product) continue;
+        m.getWorldPosition(p);
+        if ((cam.x - p.x) * (u.side as number) <= 0) continue; // its label faces away from us
+        if (cam.distanceTo(p) > 9) continue;
+        p.project(camera);
+        if (p.z > 1 || p.z < -1) continue;
+        const sx = ((p.x + 1) / 2) * r.width;
+        const sy = ((1 - p.y) / 2) * r.height;
+        const d = Math.hypot(sx - tx, sy - ty);
+        if (d < bestD) {
+          bestD = d;
+          best = m;
+        }
+      }
+      return best;
+    };
+
     let hovered: THREE.Mesh | null = null;
     let hoverKey = '';
     const onHover = (e: PointerEvent) => {
@@ -999,6 +1091,11 @@ export default function Shop3D({
         setHover(!obj ? null : obj.userData.checkout ? counterLabel : obj.userData.poster ? (deal?.name ?? null) : (obj.userData.product as ProductListItem).name);
       }
     };
+    const selectProduct = (m: THREE.Mesh, far: boolean) => {
+      const u = m.userData;
+      setSelected(u.product as ProductListItem);
+      if (far) goAisle(u.aisle as number, u.side as 1 | -1); // too far to reach: drive over
+    };
     const onTap = (e: PointerEvent) => {
       cast(e);
       const hit = ray.intersectObjects(pickables, false)[0];
@@ -1016,28 +1113,53 @@ export default function Shop3D({
           }
           return;
         }
-        setSelected(u.product as ProductListItem);
-        if (hit.distance > 5) goAisle(u.aisle as number, u.side as 1 | -1); // too far to reach: drive over
+        selectProduct(hit.object as THREE.Mesh, hit.distance > 5);
         return;
       }
+      const near = pickNear(e);
+      if (near) return selectProduct(near, false);
       setSelected(null);
       const f = ray.intersectObject(floor)[0];
       if (f) routeTo(f.point.x, f.point.z);
     };
 
+    // pointer bookkeeping: one finger = look / tap, two fingers = pinch zoom
+    const pts = new Map<number, { x: number; y: number }>();
     let drag: { id: number; x: number; y: number; sx: number; sy: number; moved: boolean } | null = null;
+    let pinchDist = 0;
+    const pinchSpan = () => {
+      const [a, b] = [...pts.values()];
+      return Math.hypot(a.x - b.x, a.y - b.y);
+    };
     const onDown = (e: PointerEvent) => {
       if (blockedRef.current) return;
-      drag = { id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, moved: false };
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
       el.setPointerCapture(e.pointerId);
+      if (pts.size === 1) drag = { id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, moved: false };
+      else if (pts.size === 2) {
+        if (drag) drag.moved = true; // a second finger turns the gesture into a pinch: never a tap
+        pinchDist = pinchSpan();
+      }
     };
     const onMove = (e: PointerEvent) => {
+      if (pts.has(e.pointerId)) pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pts.size === 2) {
+        const d = pinchSpan();
+        if (pinchDist > 0 && d > 0) {
+          fovTarget = clamp(camera.fov / (d / pinchDist), FOV.min, FOV.max);
+          camera.fov = fovTarget; // follow the fingers immediately
+          camera.updateProjectionMatrix();
+        }
+        pinchDist = d;
+        return;
+      }
       if (drag && drag.id === e.pointerId) {
-        if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 5) drag.moved = true;
+        if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 6) drag.moved = true;
         if (drag.moved) {
-          // the world follows the finger: dragging right turns the head left
-          look = wrapPi(look + (e.clientX - drag.x) * 0.0045);
-          pitch = Math.max(-1.1, Math.min(0.8, pitch + (e.clientY - drag.y) * 0.0045));
+          // the world follows the finger: dragging right turns the head left. Zoomed in = finer movement.
+          const k = 0.0045 * (camera.fov / FOV.base);
+          look = wrapPi(look + (e.clientX - drag.x) * k);
+          pitch = clamp(pitch + (e.clientY - drag.y) * k, -1.1, 0.8);
           lookGoal = null;
           lastLookInput = performance.now();
           el.style.cursor = 'grabbing';
@@ -1047,25 +1169,41 @@ export default function Shop3D({
       } else if (e.pointerType === 'mouse' && !blockedRef.current) onHover(e);
     };
     const onUp = (e: PointerEvent) => {
-      if (drag && drag.id === e.pointerId && !drag.moved) onTap(e);
-      drag = null;
+      if (drag && drag.id === e.pointerId && !drag.moved && pts.size === 1 && e.type === 'pointerup') onTap(e);
+      pts.delete(e.pointerId);
+      pinchDist = 0;
+      if (pts.size === 0) drag = null;
+      else if (pts.size === 1) {
+        // one finger stays after a pinch: keep looking with it, but it can never become a tap
+        const [[id, p]] = [...pts.entries()];
+        drag = { id, x: p.x, y: p.y, sx: p.x, sy: p.y, moved: true };
+      }
       el.style.cursor = hovered ? 'pointer' : 'grab';
+    };
+    const onWheel = (e: WheelEvent) => {
+      if (blockedRef.current) return;
+      e.preventDefault();
+      zoomBy(Math.exp(-e.deltaY * 0.0015));
     };
     el.addEventListener('pointerdown', onDown);
     el.addEventListener('pointermove', onMove);
     el.addEventListener('pointerup', onUp);
     el.addEventListener('pointercancel', onUp);
+    el.addEventListener('wheel', onWheel, { passive: false });
 
     // ---------------------------------------------------------------- input: keyboard
-    // W/S drive, A/D and the left/right arrows steer, C re-centers the view
+    // W/S drive, A/D and the left/right arrows steer, C re-centers the view, +/- zoom
     const MAP: Record<string, string> = {
       w: 'f', W: 'f', ArrowUp: 'f', s: 'b', S: 'b', ArrowDown: 'b',
       a: 'tl', A: 'tl', ArrowLeft: 'tl', d: 'tr', D: 'tr', ArrowRight: 'tr', c: 'c', C: 'c',
     };
     const typing = (e: KeyboardEvent) => !!(e.target as HTMLElement | null)?.closest('input, textarea, select, [contenteditable="true"]');
     const onKeyDown = (e: KeyboardEvent) => {
+      if (typing(e) || blockedRef.current || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === '+' || e.key === '=') return zoomBy(1.2);
+      if (e.key === '-' || e.key === '_') return zoomBy(1 / 1.2);
       const k = MAP[e.key];
-      if (!k || typing(e) || blockedRef.current || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (!k) return;
       e.preventDefault();
       keys.current.add(k);
     };
@@ -1083,6 +1221,7 @@ export default function Shop3D({
     let last = performance.now();
     let mapTick = 0;
     let stuck = 0;
+    let shownAisle = -2;
     const loop = () => {
       raf = requestAnimationFrame(loop);
       const now = performance.now();
@@ -1091,8 +1230,11 @@ export default function Shop3D({
       const k = keys.current;
       const live = !blockedRef.current;
 
-      const steer = live ? (k.has('tl') ? 1 : 0) - (k.has('tr') ? 1 : 0) : 0;
-      const drive = live ? (k.has('f') ? 1 : 0) - (k.has('b') ? 1 : 0) : 0;
+      // keys give -1/0/1, the touch joystick gives a smooth -1..1; whichever is active wins
+      const keyDrive = live ? (k.has('f') ? 1 : 0) - (k.has('b') ? 1 : 0) : 0;
+      const keySteer = live ? (k.has('tl') ? 1 : 0) - (k.has('tr') ? 1 : 0) : 0;
+      const drive = keyDrive || (live ? analog.current.drive : 0);
+      const steer = keySteer || (live ? analog.current.steer : 0);
       if (live && k.has('c')) {
         lookGoal = 0;
         k.delete('c');
@@ -1104,7 +1246,7 @@ export default function Shop3D({
         clearTrail();
         pendingCheckout = false;
         headGoal = null;
-        target = drive > 0 ? SPEED : -SPEED * 0.55;
+        target = drive > 0 ? SPEED * drive : SPEED * 0.55 * drive;
         // while driving forward the head slowly returns to the front, unless the customer is looking around
         if (drive > 0 && now - lastLookInput > 1500 && lookGoal == null) look -= look * Math.min(1, dt * 1.6);
       } else if (path.length) {
@@ -1132,7 +1274,7 @@ export default function Shop3D({
         }
       }
 
-      // steering with the keys: faster while rolling, slow in place
+      // steering: faster while rolling, slow in place
       if (steer) {
         headGoal = null;
         const rate = 1.7 * (0.45 + 0.55 * Math.min(1, Math.abs(v) / SPEED));
@@ -1179,6 +1321,12 @@ export default function Shop3D({
       camera.position.set(0, EYE + (Math.abs(v) > 0.3 && !reduce ? Math.sin(now / 110) * 0.015 : 0), 0);
       camera.rotation.set(pitch, look, 0);
 
+      // smooth zoom
+      if (Math.abs(camera.fov - fovTarget) > 0.05) {
+        camera.fov += (fovTarget - camera.fov) * Math.min(1, dt * 10);
+        camera.updateProjectionMatrix();
+      }
+
       // items dropping into the trolley
       for (let i = flyers.length - 1; i >= 0; i--) {
         const fl = flyers[i];
@@ -1196,6 +1344,24 @@ export default function Shop3D({
       if (beacon?.visible) {
         if (now > beaconUntil) beacon.visible = false;
         else beacon.position.y = beaconBase + (reduce ? 0 : Math.sin(now / 220) * 0.06);
+      }
+
+      // which aisle are we in? (drives the "this aisle" panel)
+      if (mapTick % 10 === 0) {
+        let near = -1;
+        let nd = 2.4;
+        lay.gondolas.forEach((g, i) => {
+          if (pos.z < g.minZ - 1.5 || pos.z > g.maxZ + 1.5) return;
+          const d = Math.abs(pos.x - g.gx);
+          if (d < nd) {
+            nd = d;
+            near = i;
+          }
+        });
+        if (near !== shownAisle) {
+          shownAisle = near;
+          setCurrentAisle(near);
+        }
       }
 
       if (++mapTick % 4 === 0) drawMap();
@@ -1221,10 +1387,12 @@ export default function Shop3D({
       el.removeEventListener('pointermove', onMove);
       el.removeEventListener('pointerup', onUp);
       el.removeEventListener('pointercancel', onUp);
+      el.removeEventListener('wheel', onWheel);
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', onBlur);
       keys.current.clear();
+      analog.current = { drive: 0, steer: 0 };
       ctrl.current = null;
       scene.traverse((o) => {
         const m = o as THREE.Mesh;
@@ -1253,21 +1421,88 @@ export default function Shop3D({
     );
   }
 
-  const press = (k: string) => ({
-    onPointerDown: (e: React.PointerEvent) => {
-      e.preventDefault();
-      keys.current.add(k);
-    },
-    onPointerUp: () => keys.current.delete(k),
-    onPointerLeave: () => keys.current.delete(k),
-    onPointerCancel: () => keys.current.delete(k),
-  });
-  const pad = 'grid h-12 w-12 select-none place-items-center rounded-md bg-white/90 text-lg font-bold text-slate-700 shadow active:bg-brand-100';
+  // ---------------------------------------------------------------- joystick (touch)
+  const joyMove = (e: React.PointerEvent) => {
+    const base = joyBase.current;
+    const knob = joyKnob.current;
+    if (!base || !knob) return;
+    const b = base.getBoundingClientRect();
+    const R = b.width / 2 - 24;
+    let dx = e.clientX - (b.left + b.width / 2);
+    let dy = e.clientY - (b.top + b.height / 2);
+    const len = Math.hypot(dx, dy);
+    if (len > R) {
+      dx *= R / len;
+      dy *= R / len;
+    }
+    knob.style.transform = `translate(${dx}px, ${dy}px)`;
+    const dead = 0.18;
+    const nx = dx / R;
+    const ny = dy / R;
+    analog.current.steer = Math.abs(nx) < dead ? 0 : -nx; // left = steer left
+    analog.current.drive = Math.abs(ny) < dead ? 0 : -ny; // up = forward
+  };
+  const joyEnd = () => {
+    joyId.current = null;
+    analog.current = { drive: 0, steer: 0 };
+    if (joyKnob.current) joyKnob.current.style.transform = 'translate(0, 0)';
+  };
+
   const tip = cartCount === 0 ? t('tipPick') : t('tipCheckout');
+  const iconBtn = 'grid h-11 w-11 select-none place-items-center rounded-md border border-slate-300 bg-white/95 text-xl font-bold text-slate-700 shadow active:bg-brand-100';
+  const dockBtn = (active: boolean) =>
+    `flex flex-1 flex-col items-center justify-center gap-0.5 py-1.5 text-[11px] font-bold ${active ? 'bg-brand-50 text-brand-700' : 'text-slate-600'}`;
+  const toggleSheet = (s: Exclude<Sheet, null>) => setSheet((cur) => (cur === s ? null : s));
+  const shelf = aisles[shelfAisle] ?? aisles[0];
+
+  const selectedCard = selected && (
+    <div className="rounded-md border border-slate-300 bg-white p-3 shadow-lg">
+      <div className="flex items-start justify-between gap-2">
+        <Link href={`/products/${encodeURIComponent(selected.slug ?? '')}`} className="font-bold hover:text-brand-700">
+          {selected.name}
+        </Link>
+        <button type="button" onClick={() => setSelected(null)} aria-label={t('close')} className="grid h-9 w-9 shrink-0 place-items-center rounded hover:bg-slate-100">
+          <CloseIcon className="h-5 w-5" />
+        </button>
+      </div>
+      <div className="my-2">
+        <Price price={selected.price} salePrice={selected.salePrice} />
+      </div>
+      <AddToCart
+        productId={selected.id}
+        slug={selected.slug ?? ''}
+        name={selected.name ?? selected.sku}
+        price={selected.salePrice ?? selected.price}
+        image={selected.image}
+        stock={selected.stock}
+      />
+    </div>
+  );
+
+  const basketBar = (
+    <div className="flex items-center justify-between gap-2 rounded-md bg-brand-700 px-3 py-2 text-white shadow-lg">
+      <span className="flex items-center gap-2 text-sm">
+        <CartIcon className="h-5 w-5" />
+        {cartCount > 0 ? (
+          <b>
+            {formatNumber(cartCount, locale)} · {formatNumber(cartTotal, locale)} {tc('currency')}
+          </b>
+        ) : (
+          t('basketEmpty')
+        )}
+      </span>
+      {cartCount > 0 && (
+        <button type="button" onClick={() => ctrl.current?.goTo('counter', true)} className="rounded bg-white px-3 py-1.5 text-xs font-bold text-brand-800">
+          {t('checkout')}
+        </button>
+      )}
+    </div>
+  );
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
+      {/* desktop toolbar (phones use the bottom dock inside the store) */}
+      <div className="hidden flex-wrap items-center gap-2 md:flex">
         <button type="button" onClick={() => ctrl.current?.goTo('entrance')} className="btn-outline h-9">
           {t('entrance')}
         </button>
@@ -1280,14 +1515,10 @@ export default function Shop3D({
           </button>
         ))}
         <form
-          className="relative w-full sm:w-64"
+          className="relative w-64"
           onSubmit={(e) => {
             e.preventDefault();
-            if (results[0]) {
-              setNotice(false);
-              ctrl.current?.guide(results[0].p.id);
-              setQuery('');
-            }
+            if (results[0]) guideTo(results[0].p.id);
           }}
         >
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('findPlaceholder')} aria-label={t('find')} className="input h-9" />
@@ -1296,15 +1527,7 @@ export default function Shop3D({
               {results.length === 0 && <li className="px-3 py-2 text-sm text-slate-500">{t('noMatch')}</li>}
               {results.map(({ p, aisle }) => (
                 <li key={p.id}>
-                  <button
-                    type="button"
-                    className="flex w-full items-center justify-between gap-2 px-3 py-2 text-start text-sm hover:bg-brand-50"
-                    onClick={() => {
-                      setNotice(false);
-                      ctrl.current?.guide(p.id);
-                      setQuery('');
-                    }}
-                  >
+                  <button type="button" className="flex w-full items-center justify-between gap-2 px-3 py-2 text-start text-sm hover:bg-brand-50" onClick={() => guideTo(p.id)}>
                     <span className="line-clamp-1">{p.name}</span>
                     <span className="shrink-0 text-xs text-brand-700">{aisle}</span>
                   </button>
@@ -1319,8 +1542,8 @@ export default function Shop3D({
         <button type="button" onClick={() => setSound((v) => !v)} aria-pressed={sound} className={`h-9 rounded-md border px-3 text-xs font-bold ${sound ? 'border-brand-600 bg-brand-50 text-brand-700' : 'border-slate-300 bg-white text-slate-600'}`}>
           {sound ? t('soundOn') : t('soundOff')}
         </button>
-        <button type="button" onClick={toggleFs} className="h-9 rounded-md border border-slate-300 bg-white px-3 text-xs font-bold text-slate-600">
-          {fs ? t('exitFullscreen') : t('fullscreen')}
+        <button type="button" onClick={toggleFull} className="h-9 rounded-md border border-slate-300 bg-white px-3 text-xs font-bold text-slate-600">
+          {full ? t('exitFullscreen') : t('fullscreen')}
         </button>
         <button type="button" onClick={() => setLow((v) => !v)} aria-pressed={low} className={`h-9 rounded-md border px-3 text-xs font-bold ${low ? 'border-brand-600 bg-brand-50 text-brand-700' : 'border-slate-300 bg-white text-slate-600'}`}>
           {low ? t('highQuality') : t('lowQuality')}
@@ -1330,13 +1553,23 @@ export default function Shop3D({
         </Link>
       </div>
 
-      <div ref={stageRef} className="relative bg-white">
+      <div
+        ref={stageRef}
+        className={coarse && immersive ? 'fixed inset-0 z-[56] h-[100dvh] bg-white' : fs ? 'relative h-screen bg-white' : 'relative bg-white'}
+      >
         {/* dir=ltr: the 3D canvas has no text direction; overlays below follow the page direction */}
         <div
           ref={mountRef}
           dir="ltr"
-          className={`w-full overflow-hidden bg-slate-100 ${fs ? 'h-screen' : 'h-[72vh] min-h-[460px] rounded-md border border-slate-300'}`}
+          className={`w-full overflow-hidden bg-slate-100 ${full ? 'h-full' : 'h-[72vh] min-h-[460px] rounded-md border border-slate-300'}`}
         />
+
+        {/* phones: leave the full-window mode */}
+        {coarse && immersive && (
+          <button type="button" onClick={() => setImmersive(false)} aria-label={t('exitFullscreen')} className={`${iconBtn} absolute start-2 top-2 z-20`}>
+            <CloseIcon className="h-5 w-5" />
+          </button>
+        )}
 
         {remainingSeconds != null && (
           <div
@@ -1353,121 +1586,254 @@ export default function Shop3D({
 
         <div className="pointer-events-none absolute start-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/90 ring-1 ring-black/40" aria-hidden />
 
+        {/* zoom + re-center (all devices) */}
+        <div className="absolute end-2 top-1/2 z-10 flex -translate-y-1/2 flex-col gap-2 md:end-3">
+          <button type="button" className={iconBtn} aria-label={t('zoomIn')} title={t('zoomIn')} onClick={() => ctrl.current?.zoomBy(1.3)}>
+            +
+          </button>
+          <button type="button" className={iconBtn} aria-label={t('zoomOut')} title={t('zoomOut')} onClick={() => ctrl.current?.zoomBy(1 / 1.3)}>
+            −
+          </button>
+          <button type="button" className={iconBtn} aria-label={t('recenter')} title={t('recenter')} onClick={() => ctrl.current?.recenter()}>
+            ●
+          </button>
+        </div>
+
         {notice && (
-          <p className="absolute inset-x-3 bottom-16 mx-auto max-w-md rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 shadow">{t('notOnShelf')}</p>
+          <p className="absolute inset-x-3 bottom-32 mx-auto max-w-md rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 shadow md:bottom-16">{t('notOnShelf')}</p>
         )}
 
-        {hover && <p className="pointer-events-none absolute bottom-3 start-1/2 max-w-[60%] -translate-x-1/2 truncate rounded bg-slate-900/80 px-3 py-1 text-sm text-white">{hover}</p>}
+        {hover && <p className="pointer-events-none absolute bottom-3 start-1/2 hidden max-w-[60%] -translate-x-1/2 truncate rounded bg-slate-900/80 px-3 py-1 text-sm text-white md:block">{hover}</p>}
 
-        {/* contextual tip (hidden on touch screens, where the on-screen buttons take that corner) */}
+        {/* contextual tip (desktop) */}
         {tour === null && (
-          <p className="pointer-events-none absolute bottom-3 start-3 max-w-[40%] rounded bg-white/90 px-3 py-1.5 text-xs text-slate-700 shadow [@media(pointer:coarse)]:hidden">💡 {tip}</p>
+          <p className="pointer-events-none absolute bottom-3 start-3 hidden max-w-[40%] rounded bg-white/90 px-3 py-1.5 text-xs text-slate-700 shadow md:block">💡 {tip}</p>
         )}
 
-        {/* guided tour: the steps that talk about a place drive the trolley there */}
+        {/* minimap: a corner widget on desktop, a big tap-to-drive map sheet on phones */}
+        <div
+          className={
+            sheet === 'map'
+              ? 'absolute inset-x-3 top-1/2 z-30 -translate-y-1/2 rounded-md border border-slate-300 bg-white p-2 shadow-2xl'
+              : 'absolute end-3 top-3 hidden rounded-md border border-slate-300 bg-white/90 p-1 shadow md:block'
+          }
+        >
+          {sheet === 'map' && (
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-sm font-bold">{t('map')}</span>
+              <button type="button" onClick={() => setSheet(null)} aria-label={t('close')} className="grid h-9 w-9 place-items-center rounded hover:bg-slate-100">
+                <CloseIcon className="h-5 w-5" />
+              </button>
+            </div>
+          )}
+          <canvas
+            ref={mapRef}
+            width={336}
+            height={240}
+            aria-label={t('map')}
+            title={t('map')}
+            className={`block cursor-pointer ${sheet === 'map' ? 'h-auto w-full' : 'h-[120px] w-[168px]'}`}
+            onClick={(e) => {
+              const c = e.currentTarget;
+              const r = c.getBoundingClientRect();
+              ctrl.current?.mapClick(((e.clientX - r.left) * c.width) / r.width, ((e.clientY - r.top) * c.height) / r.height);
+              if (sheet === 'map') setSheet(null);
+            }}
+          />
+        </div>
+
+        {/* touch joystick: drag the knob; up = forward, sideways = steer */}
+        <div
+          ref={joyBase}
+          className="absolute bottom-[8.5rem] start-3 hidden h-32 w-32 touch-none select-none rounded-full border border-slate-300 bg-white/50 [@media(pointer:coarse)]:block"
+          aria-label={t('joystick')}
+          onPointerDown={(e) => {
+            e.currentTarget.setPointerCapture(e.pointerId);
+            joyId.current = e.pointerId;
+            joyMove(e);
+          }}
+          onPointerMove={(e) => joyId.current === e.pointerId && joyMove(e)}
+          onPointerUp={joyEnd}
+          onPointerCancel={joyEnd}
+        >
+          <div ref={joyKnob} className="pointer-events-none absolute start-1/2 top-1/2 -ms-6 -mt-6 grid h-12 w-12 place-items-center rounded-full bg-brand-600 text-white shadow-lg transition-transform duration-75">
+            ✥
+          </div>
+        </div>
+
+        {/* guided tour */}
         {tour !== null && (
-          <div role="dialog" aria-label={t('helpButton')} className="absolute inset-x-3 bottom-3 z-20 mx-auto max-w-md rounded-md border border-slate-300 bg-white p-4 shadow-xl">
+          <div role="dialog" aria-label={t('helpButton')} className="absolute inset-x-3 bottom-16 z-20 mx-auto max-w-md rounded-md border border-slate-300 bg-white p-4 shadow-xl md:bottom-3">
             <div className="mb-1 flex items-center justify-between text-xs text-slate-500">
               <span>{t('tourStep', { n: tour + 1, total: TOUR_STEPS })}</span>
-              <button type="button" onClick={endTour} className="font-bold text-slate-500 hover:text-slate-800">
+              <button type="button" onClick={endTour} className="px-2 py-1 font-bold text-slate-500 hover:text-slate-800">
                 {t('tourSkip')}
               </button>
             </div>
             <h3 className="font-extrabold">{t(`tour${tour + 1}Title`)}</h3>
             <p className="mt-1 text-sm leading-7 text-slate-600">{t(`tour${tour + 1}Text`)}</p>
+            {coarse && tour <= 2 && <p className="mt-1 rounded bg-accent-50 p-2 text-xs leading-6 text-slate-700">📱 {t('tourTouch')}</p>}
             <div className="mt-3 flex items-center justify-between gap-2">
-              <button type="button" className="btn-outline h-9 px-3 text-xs" disabled={tour === 0} onClick={() => setTour(tour - 1)}>
+              <button type="button" className="btn-outline h-10 px-4 text-xs" disabled={tour === 0} onClick={() => setTour(tour - 1)}>
                 {t('tourPrev')}
               </button>
               <div className="flex gap-1" aria-hidden>
                 {Array.from({ length: TOUR_STEPS }, (_, i) => (
-                  <span key={i} className={`h-1.5 w-4 rounded-sm ${i === tour ? 'bg-brand-600' : 'bg-slate-300'}`} />
+                  <span key={i} className={`h-1.5 w-3 rounded-sm ${i === tour ? 'bg-brand-600' : 'bg-slate-300'}`} />
                 ))}
               </div>
-              <button type="button" className="btn h-9 px-3 text-xs" onClick={() => (tour >= TOUR_STEPS - 1 ? endTour() : setTour(tour + 1))}>
+              <button type="button" className="btn h-10 px-4 text-xs" onClick={() => (tour >= TOUR_STEPS - 1 ? endTour() : setTour(tour + 1))}>
                 {tour >= TOUR_STEPS - 1 ? t('tourDone') : t('tourNext')}
               </button>
             </div>
           </div>
         )}
 
-        <div className="absolute end-3 top-3 rounded-md border border-slate-300 bg-white/90 p-1 shadow">
-          <canvas
-            ref={mapRef}
-            width={168}
-            height={120}
-            aria-label={t('map')}
-            title={t('map')}
-            className="block h-[120px] w-[168px] cursor-pointer"
-            onClick={(e) => {
-              const c = e.currentTarget;
-              const r = c.getBoundingClientRect();
-              ctrl.current?.mapClick(((e.clientX - r.left) * c.width) / r.width, ((e.clientY - r.top) * c.height) / r.height);
-            }}
-          />
+        {/* desktop: selected product + basket in the corner */}
+        <div className="absolute bottom-3 end-3 hidden w-72 flex-col gap-2 md:flex">
+          {selectedCard}
+          {basketBar}
         </div>
 
-        {/* touch controls: only on devices whose main input is a finger */}
-        <div className="absolute bottom-3 start-3 hidden grid-cols-3 gap-1 [@media(pointer:coarse)]:grid">
-          <button type="button" aria-label={t('recenter')} title={t('recenter')} className={pad} {...press('c')}>●</button>
-          <button type="button" aria-label={t('forward')} className={pad} {...press('f')}>▲</button>
-          <span />
-          <button type="button" aria-label={t('turnLeft')} className={pad} {...press('tl')}>◀</button>
-          <button type="button" aria-label={t('back')} className={pad} {...press('b')}>▼</button>
-          <button type="button" aria-label={t('turnRight')} className={pad} {...press('tr')}>▶</button>
-        </div>
+        {/* phones: basket strip above the dock; the selected product opens as a bottom sheet */}
+        <div className="absolute inset-x-2 bottom-16 md:hidden">{basketBar}</div>
+        {selected && <div className="absolute inset-x-0 bottom-0 z-30 rounded-t-lg bg-white p-3 shadow-2xl md:hidden">{selectedCard}</div>}
 
-        <div className="absolute bottom-3 end-3 flex w-72 max-w-[calc(100%-1.5rem)] flex-col gap-2">
-          {selected && (
-            <div className="rounded-md border border-slate-300 bg-white p-3 shadow-lg">
-              <div className="flex items-start justify-between gap-2">
-                <Link href={`/products/${encodeURIComponent(selected.slug ?? '')}`} className="font-bold hover:text-brand-700">
-                  {selected.name}
-                </Link>
-                <button type="button" onClick={() => setSelected(null)} aria-label={t('close')} className="grid h-7 w-7 shrink-0 place-items-center rounded hover:bg-slate-100">
-                  <CloseIcon className="h-4 w-4" />
-                </button>
-              </div>
-              <div className="my-2">
-                <Price price={selected.price} salePrice={selected.salePrice} />
-              </div>
-              <AddToCart
-                productId={selected.id}
-                slug={selected.slug ?? ''}
-                name={selected.name ?? selected.sku}
-                price={selected.salePrice ?? selected.price}
-                image={selected.image}
-                stock={selected.stock}
-              />
-            </div>
-          )}
-
-          <div className="flex items-center justify-between gap-2 rounded-md bg-brand-700 px-3 py-2 text-white shadow-lg">
-            <span className="flex items-center gap-2 text-sm">
-              <CartIcon className="h-5 w-5" />
-              {cartCount > 0 ? (
-                <b>
-                  {formatNumber(cartCount, locale)} · {formatNumber(cartTotal, locale)} {tc('currency')}
-                </b>
-              ) : (
-                t('basketEmpty')
-              )}
-            </span>
-            {cartCount > 0 && (
-              <button type="button" onClick={() => ctrl.current?.goTo('counter', true)} className="rounded bg-white px-2.5 py-1 text-xs font-bold text-brand-800">
-                {t('checkout')}
+        {/* phone sheets */}
+        {sheet === 'aisles' && (
+          <div className="absolute inset-x-0 bottom-14 z-20 flex max-h-[72%] flex-col rounded-t-lg border border-slate-300 bg-white shadow-2xl md:hidden">
+            <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
+              <b>{t('dockAisles')}</b>
+              <button type="button" onClick={() => setSheet(null)} aria-label={t('close')} className="grid h-9 w-9 place-items-center rounded hover:bg-slate-100">
+                <CloseIcon className="h-5 w-5" />
               </button>
-            )}
+            </div>
+            <div className="flex gap-2 overflow-x-auto border-b border-slate-100 p-2">
+              {aisles.map((a, i) => (
+                <button
+                  key={a.id}
+                  type="button"
+                  onClick={() => {
+                    setShelfAisle(i);
+                    ctrl.current?.goAisle(i); // the trolley parks there while you browse
+                  }}
+                  className={`h-10 shrink-0 rounded-full border px-4 text-sm font-bold ${i === shelfAisle ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-300 bg-white text-slate-700'}`}
+                >
+                  {a.name}
+                </button>
+              ))}
+            </div>
+            <ul className="grid flex-1 grid-cols-2 gap-2 overflow-y-auto p-2">
+              {shelf?.products.slice(0, MAX_PER_AISLE).map((p) => (
+                <li key={p.id} className="flex flex-col gap-1 rounded-md border border-slate-200 p-2">
+                  <ProductImage src={p.image} alt={p.name ?? p.sku} className="aspect-[4/3] w-full rounded" />
+                  <span className="line-clamp-2 min-h-[2.4rem] text-[13px] font-medium">{p.name}</span>
+                  <Price price={p.price} salePrice={p.salePrice} />
+                  <AddToCart size="compact" productId={p.id} slug={p.slug ?? ''} name={p.name ?? p.sku} price={p.salePrice ?? p.price} image={p.image} stock={p.stock} />
+                  <button type="button" onClick={() => guideTo(p.id)} className="h-9 rounded-md border border-slate-300 text-xs font-bold text-slate-600">
+                    📍 {t('showInStore')}
+                  </button>
+                </li>
+              ))}
+            </ul>
           </div>
-        </div>
+        )}
+
+        {sheet === 'search' && (
+          <div className="absolute inset-x-0 bottom-14 z-20 max-h-[72%] overflow-y-auto rounded-t-lg border border-slate-300 bg-white p-3 shadow-2xl md:hidden">
+            <div className="mb-2 flex items-center gap-2">
+              <input
+                autoFocus
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={t('findPlaceholder')}
+                aria-label={t('find')}
+                className="input h-11 text-base"
+              />
+              <button type="button" onClick={() => setSheet(null)} aria-label={t('close')} className="grid h-11 w-11 shrink-0 place-items-center rounded hover:bg-slate-100">
+                <CloseIcon className="h-5 w-5" />
+              </button>
+            </div>
+            {norm(query).length >= 2 && results.length === 0 && <p className="p-2 text-sm text-slate-500">{t('noMatch')}</p>}
+            <ul className="divide-y divide-slate-100">
+              {results.map(({ p, aisle }) => (
+                <li key={p.id}>
+                  <button type="button" onClick={() => guideTo(p.id)} className="flex min-h-12 w-full items-center gap-3 py-2 text-start">
+                    <ProductImage src={p.image} alt="" className="h-12 w-12 shrink-0 rounded" />
+                    <span className="flex-1 text-sm font-medium">{p.name}</span>
+                    <span className="shrink-0 text-xs text-brand-700">{aisle}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {sheet === 'more' && (
+          <div className="absolute inset-x-0 bottom-14 z-20 rounded-t-lg border border-slate-300 bg-white p-3 shadow-2xl md:hidden">
+            <div className="mb-2 flex items-center justify-between">
+              <b>{t('dockMore')}</b>
+              <button type="button" onClick={() => setSheet(null)} aria-label={t('close')} className="grid h-9 w-9 place-items-center rounded hover:bg-slate-100">
+                <CloseIcon className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-sm font-bold">
+              <button type="button" className="btn-outline h-11" onClick={() => { setSheet(null); ctrl.current?.goTo('entrance'); }}>
+                {t('entrance')}
+              </button>
+              <button type="button" className="btn-outline h-11" onClick={() => { setSheet(null); ctrl.current?.goTo('counter'); }}>
+                {t('counter')}
+              </button>
+              <button type="button" className="btn-outline h-11" onClick={() => { setSheet(null); setTour(0); }}>
+                ? {t('helpButton')}
+              </button>
+              <button type="button" aria-pressed={sound} className="btn-outline h-11" onClick={() => setSound((v) => !v)}>
+                {sound ? t('soundOn') : t('soundOff')}
+              </button>
+              <button type="button" aria-pressed={low} className="btn-outline h-11" onClick={() => setLow((v) => !v)}>
+                {low ? t('highQuality') : t('lowQuality')}
+              </button>
+              <button type="button" className="btn-outline h-11" onClick={() => { setSheet(null); setImmersive((v) => !v); }}>
+                {immersive ? t('exitFullscreen') : t('fullscreen')}
+              </button>
+              <Link href="/products" className="btn-outline col-span-2 h-11">
+                {t('listView')}
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {/* phone dock */}
+        <nav className="absolute inset-x-0 bottom-0 z-20 flex h-14 divide-x divide-slate-200 border-t border-slate-300 bg-white/95 rtl:divide-x-reverse md:hidden" aria-label={t('title')}>
+          <button type="button" className={dockBtn(sheet === 'aisles')} onClick={() => toggleSheet('aisles')}>
+            <span aria-hidden className="text-lg">🏬</span>
+            {t('dockAisles')}
+          </button>
+          <button type="button" className={dockBtn(sheet === 'search')} onClick={() => toggleSheet('search')}>
+            <span aria-hidden className="text-lg">🔎</span>
+            {t('dockSearch')}
+          </button>
+          <button type="button" className={dockBtn(false)} onClick={() => { setSheet(null); ctrl.current?.goTo('deals'); }}>
+            <span aria-hidden className="text-lg">🏷️</span>
+            {t('dockOffers')}
+          </button>
+          <button type="button" className={dockBtn(sheet === 'map')} onClick={() => toggleSheet('map')}>
+            <span aria-hidden className="text-lg">🗺️</span>
+            {t('dockMap')}
+          </button>
+          <button type="button" className={dockBtn(sheet === 'more')} onClick={() => toggleSheet('more')}>
+            <span aria-hidden className="text-lg">⋯</span>
+            {t('dockMore')}
+          </button>
+        </nav>
 
         {/* checkout at the counter, without leaving the store */}
         {checkoutOpen && (
-          <div className="absolute inset-0 z-30 flex items-start justify-center overflow-y-auto bg-black/45 p-3 sm:items-center" onMouseDown={(e) => e.target === e.currentTarget && setCheckoutOpen(false)}>
-            <div role="dialog" aria-modal="true" aria-label={t('checkoutTitle')} className="w-full max-w-3xl rounded-md bg-white p-4 shadow-2xl">
+          <div className="absolute inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/45 p-2 sm:items-center sm:p-3" onMouseDown={(e) => e.target === e.currentTarget && setCheckoutOpen(false)}>
+            <div role="dialog" aria-modal="true" aria-label={t('checkoutTitle')} className="w-full max-w-3xl rounded-md bg-white p-3 shadow-2xl sm:p-4">
               <div className="mb-3 flex items-center justify-between border-b border-slate-200 pb-2">
                 <h2 className="text-lg font-extrabold">🧾 {t('checkoutTitle')}</h2>
-                <button type="button" onClick={() => setCheckoutOpen(false)} aria-label={t('close')} className="grid h-8 w-8 place-items-center rounded-md hover:bg-slate-100">
+                <button type="button" onClick={() => setCheckoutOpen(false)} aria-label={t('close')} className="grid h-10 w-10 place-items-center rounded-md hover:bg-slate-100">
                   <CloseIcon className="h-5 w-5" />
                 </button>
               </div>

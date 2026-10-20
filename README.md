@@ -156,6 +156,12 @@ switch back to the plugin (snippet in the comment inside `next.config.ts`).
   leaves the page (fullscreen is exited first so the map prompt and payment page work).
 - **Guides:** a 6-step interactive tour (first visit, reopen with the "Help" button) that drives the trolley to the offers
   wall and the counter while it explains them, plus a contextual tip line. The tour never blocks the controls.
+- **Phone mode (version 6):** full-window "immersive" layout by default (CSS, so it works on iPhone too; ✕ leaves it),
+  touch **joystick** to drive, **pinch to zoom** (also +/− buttons, mouse wheel and the +/- keys on desktop), tap the floor
+  to be driven there, taps near a product pick it (fat-finger tolerance), and a bottom **dock**: *Aisles* (product grid of
+  the aisle you are in, each with add-to-cart and "show in store"), *Search*, *Offers*, *Map* (big tap-to-drive map) and
+  *More* (counter, help, sound, quality, list view). The selected product opens as a bottom sheet. The pixel ratio is
+  capped on phones (use "Low quality" on slow devices).
 - 3D polish: fake contact shadows, a "special offers" poster built from the current discounts, fullscreen, and an optional
   chime (synthesized in the browser, no audio files) when an item goes into the basket.
 
