@@ -1,10 +1,11 @@
 import { DeleteOutlined, UploadOutlined } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { App, Button, Card, Col, Form, Input, InputNumber, Row, Select, Space, Switch, Tabs, Upload } from 'antd';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import ImageEditorModal, { MAX_BULK_IMAGES } from '../components/ImageEditorModal';
 import { api } from '../lib/api';
-import { LANGS, type CategoryItem, type Media, type ProductDetail, type ProductTranslation } from '../lib/types';
+import { LANGS, type CategoryItem, type ProductDetail, type ProductTranslation } from '../lib/types';
 
 type TrForm = Partial<Omit<ProductTranslation, 'lang'>>;
 type FormValues = {
@@ -26,6 +27,7 @@ export default function ProductEditPage() {
   const [form] = Form.useForm<FormValues>();
   const [images, setImages] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState<File[] | null>(null);
 
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: () => api.get<CategoryItem[]>('/api/admin/categories') });
   const { data: product, isLoading } = useQuery({
@@ -80,15 +82,16 @@ export default function ProductEditPage() {
     }
   }
 
-  async function upload(file: File) {
-    const fd = new FormData();
-    fd.append('file', file);
-    try {
-      const m = await api.post<Media>('/api/admin/media', fd);
-      setImages((prev) => [...prev, m.url]);
-    } catch (e) {
-      message.error(e instanceof Error ? e.message : 'آپلود ناموفق بود');
-    }
+  // Files picked in one go are collected, then opened together in the editor (max 10).
+  const pickBuffer = useRef<File[]>([]);
+  const pickTimer = useRef<number>();
+  function collect(file: File) {
+    pickBuffer.current.push(file);
+    window.clearTimeout(pickTimer.current);
+    pickTimer.current = window.setTimeout(() => {
+      setEditing(pickBuffer.current);
+      pickBuffer.current = [];
+    }, 50);
   }
 
   return (
@@ -166,14 +169,22 @@ export default function ProductEditPage() {
                   showUploadList={false}
                   multiple
                   beforeUpload={(file) => {
-                    void upload(file);
+                    collect(file);
                     return false;
                   }}
                 >
-                  <Button icon={<UploadOutlined />}>آپلود تصویر</Button>
+                  <Button icon={<UploadOutlined />}>آپلود و ویرایش (حداکثر {MAX_BULK_IMAGES})</Button>
                 </Upload>
               </Space>
             </Card>
+            <ImageEditorModal
+              files={editing}
+              onClose={() => setEditing(null)}
+              onDone={(urls) => {
+                setImages((prev) => [...prev, ...urls]);
+                setEditing(null);
+              }}
+            />
           </Col>
 
           <Col xs={24} lg={8}>

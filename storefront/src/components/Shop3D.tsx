@@ -292,11 +292,15 @@ type Ctrl = {
 type Sheet = 'aisles' | 'search' | 'map' | 'more' | null;
 
 /**
- * Walk-through 3D store where you push a shopping trolley.
+ * The 3D store. On the page it is a launcher card; "Enter" opens the full view (the whole window, with the bottom menu),
+ * and closing it (button, Escape or the phone's Back button) returns to the page. The 3D scene only runs inside the
+ * full view.
+ *
+ * Inside: you push a shopping trolley.
  *  Desktop: W/S drive, A/D (or the arrows) steer, drag to look, wheel or +/- to zoom, click the floor to be driven there.
- *  Phone:   joystick to drive, drag to look, pinch to zoom, tap the floor to be driven there, and the bottom dock
- *           (Aisles / Search / Offers / Map / More) so nothing needs precise aiming at tiny 3D objects.
- *  The trolley mirrors the real cart. The counter opens the checkout right inside the store.
+ *  Phone:   joystick to drive, drag to look, pinch to zoom, tap the floor to be driven there.
+ *  Everyone: the bottom dock (Aisles / Search / Offers / Map / More) so nothing needs precise aiming at tiny 3D objects.
+ * The trolley mirrors the real cart. The counter opens the checkout right inside the store.
  */
 export default function Shop3D({
   aisles,
@@ -304,6 +308,7 @@ export default function Shop3D({
   findId = null,
   logoUrl = null,
   remainingSeconds = null,
+  onActiveChange,
 }: {
   aisles: Aisle[];
   storeName: string;
@@ -312,6 +317,8 @@ export default function Shop3D({
   logoUrl?: string | null;
   /** Time left today (null = unlimited). The countdown is owned by Shop3DGate; this only displays it. */
   remainingSeconds?: number | null;
+  /** Tells the gate when the customer is inside the full view, so only that time is counted. */
+  onActiveChange?: (active: boolean) => void;
 }) {
   const t = useTranslations('shop3d');
   const tc = useTranslations('common');
@@ -326,7 +333,9 @@ export default function Shop3D({
   const ctrl = useRef<Ctrl | null>(null);
   const keys = useRef(new Set<string>());
   const analog = useRef({ drive: 0, steer: 0 }); // joystick: -1..1
+  const pushed = useRef(false); // we added a history entry when the full view opened (so Back closes it)
 
+  const [entered, setEntered] = useState(false);
   const [selected, setSelected] = useState<ProductListItem | null>(null);
   const [hover, setHover] = useState<string | null>(null);
   const [noWebgl, setNoWebgl] = useState(false);
@@ -336,7 +345,6 @@ export default function Shop3D({
   const [sound, setSound] = useState(false);
   const [fs, setFs] = useState(false);
   const [coarse, setCoarse] = useState(false); // the main input is a finger
-  const [immersive, setImmersive] = useState(false); // full-window mode (works on iPhone, where real fullscreen does not)
   const [sheet, setSheet] = useState<Sheet>(null);
   const [currentAisle, setCurrentAisle] = useState(-1);
   const [shelfAisle, setShelfAisle] = useState(0);
@@ -367,22 +375,69 @@ export default function Shop3D({
   const cartCount = cartItems.reduce((n, i) => n + i.qty, 0);
   const cartTotal = cartItems.reduce((n, i) => n + i.qty * i.price, 0);
 
+  // ---------------------------------------------------------------- opening / closing the full view
+  const enter = () => {
+    if (entered) return;
+    try {
+      window.history.pushState(null, '', window.location.href); // so the phone's Back button closes the store, not the page
+      pushed.current = true;
+    } catch {
+      pushed.current = false;
+    }
+    setEntered(true);
+  };
+  const exit = () => {
+    if (pushed.current) window.history.back(); // the popstate handler below closes the view
+    else setEntered(false);
+  };
+  useEffect(() => {
+    if (!entered) return;
+    const onPop = () => {
+      pushed.current = false;
+      setEntered(false);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [entered]);
+
+  // reset the transient UI whenever the full view closes; tell the gate whether we are inside
+  useEffect(() => {
+    onActiveChange?.(entered);
+    if (!entered) {
+      setSheet(null);
+      setSelected(null);
+      setCheckoutOpen(false);
+      setTour(null);
+      setHover(null);
+      setNotice(false);
+      setQuery('');
+      keys.current.clear();
+      analog.current = { drive: 0, steer: 0 };
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entered]);
+
+  // opened from the assistant ("/shop3d?find=ID"): go straight in
+  useEffect(() => {
+    if (findId != null) enter();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => ctrl.current?.setLow(low), [low]);
 
-  // phones: start in the full-window mode
   useEffect(() => {
-    const c = window.matchMedia('(pointer: coarse)').matches;
-    setCoarse(c);
-    if (c) setImmersive(true);
+    setCoarse(window.matchMedia('(pointer: coarse)').matches);
   }, []);
+
+  // the page behind must not scroll while the store is open
   useEffect(() => {
-    if (!immersive) return;
+    if (!entered) return;
     const old = document.body.style.overflow;
-    document.body.style.overflow = 'hidden'; // the page behind must not scroll while the store is full-window
+    document.body.style.overflow = 'hidden';
     return () => {
       document.body.style.overflow = old;
     };
-  }, [immersive]);
+  }, [entered]);
 
   useEffect(() => {
     const on = () => setFs(document.fullscreenElement === stageRef.current);
@@ -390,20 +445,19 @@ export default function Shop3D({
     return () => document.removeEventListener('fullscreenchange', on);
   }, []);
   const toggleFull = () => {
-    if (coarse) return setImmersive((v) => !v);
     if (document.fullscreenElement) void document.exitFullscreen();
     else void stageRef.current?.requestFullscreen?.();
   };
-  const full = coarse ? immersive : fs;
 
-  // first visit: start the guided tour
+  // first visit: start the guided tour once inside
   useEffect(() => {
+    if (!entered) return;
     try {
       if (!localStorage.getItem(TOUR_KEY)) setTour(0);
     } catch {
       setTour(0);
     }
-  }, []);
+  }, [entered]);
   const endTour = () => {
     setTour(null);
     try {
@@ -418,13 +472,21 @@ export default function Shop3D({
     else if (tour === 5) ctrl.current?.goTo('counter');
   }, [tour]);
 
-  // Escape closes the checkout panel
+  // Escape: close the innermost thing first (checkout, a panel, the product card, the tour), then the store itself
   useEffect(() => {
-    if (!checkoutOpen) return;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setCheckoutOpen(false);
+    if (!entered) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (checkoutOpen) setCheckoutOpen(false);
+      else if (sheet) setSheet(null);
+      else if (selected) setSelected(null);
+      else if (tour !== null) endTour();
+      else exit();
+    };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [checkoutOpen]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entered, checkoutOpen, sheet, selected, tour]);
 
   // while the aisle panel is closed it follows the aisle the trolley is in
   useEffect(() => {
@@ -453,7 +515,9 @@ export default function Shop3D({
     ctrl.current?.guide(id);
   };
 
+  // ---------------------------------------------------------------- the scene (only while the full view is open)
   useEffect(() => {
+    if (!entered) return;
     const mount = mountRef.current;
     if (!mount) return;
 
@@ -462,6 +526,7 @@ export default function Shop3D({
       renderer = new THREE.WebGLRenderer({ antialias: true });
     } catch {
       setNoWebgl(true);
+      setEntered(false);
       return;
     }
 
@@ -1408,18 +1473,46 @@ export default function Shop3D({
       renderer.dispose();
       el.remove();
     };
-  }, [aisles, locale, counterLabel, currency, dealsTitle, dealsHint, storeName, logoUrl, findId]);
+  }, [entered, aisles, locale, counterLabel, currency, dealsTitle, dealsHint, storeName, logoUrl, findId]);
 
-  if (noWebgl) {
+  // ---------------------------------------------------------------- the launcher card (on the page)
+  if (!entered)
     return (
-      <div className="card p-8 text-center">
-        <p className="mb-4 text-slate-600">{t('noWebgl')}</p>
-        <Link href="/products" className="btn">
-          {t('listView')}
-        </Link>
+      <div className="card overflow-hidden">
+        {noWebgl && <p className="bg-amber-50 p-3 text-center text-sm text-amber-900">{t('noWebgl')}</p>}
+        <div className="grid gap-6 p-5 sm:p-8 md:grid-cols-[1fr_auto] md:items-center">
+          <div className="space-y-4">
+            <h2 className="text-xl font-extrabold">{t('launcherTitle')}</h2>
+            <p className="text-sm leading-7 text-slate-600">{t('launcherText')}</p>
+            <ul className="space-y-1 text-sm text-slate-700">
+              <li>🛒 {t('launcherF1')}</li>
+              <li>🏷️ {t('launcherF2')}</li>
+              <li>🧾 {t('launcherF3')}</li>
+            </ul>
+            <div className="flex flex-wrap gap-2">
+              {aisles.map((a) => (
+                <span key={a.id} className="rounded-full bg-brand-50 px-3 py-1 text-xs font-bold text-brand-700">
+                  {a.name}
+                </span>
+              ))}
+            </div>
+            {remainingSeconds != null && (
+              <p className="text-sm text-slate-500">
+                ⏱ {t('timeToday')}: <b>{minSec(remainingSeconds, locale)}</b>
+              </p>
+            )}
+          </div>
+          <div className="flex flex-col items-stretch gap-2 md:w-64">
+            <button type="button" onClick={enter} disabled={noWebgl} className="btn h-14 text-base">
+              🚪 {t('enter')}
+            </button>
+            <Link href="/products" className="btn-outline">
+              {t('listView')}
+            </Link>
+          </div>
+        </div>
       </div>
     );
-  }
 
   // ---------------------------------------------------------------- joystick (touch)
   const joyMove = (e: React.PointerEvent) => {
@@ -1454,411 +1547,351 @@ export default function Shop3D({
     `flex flex-1 flex-col items-center justify-center gap-0.5 py-1.5 text-[11px] font-bold ${active ? 'bg-brand-50 text-brand-700' : 'text-slate-600'}`;
   const toggleSheet = (s: Exclude<Sheet, null>) => setSheet((cur) => (cur === s ? null : s));
   const shelf = aisles[shelfAisle] ?? aisles[0];
+  const sheetBox = 'absolute inset-x-0 bottom-14 z-20 mx-auto max-w-2xl rounded-t-lg border border-slate-300 bg-white shadow-2xl';
 
-  const selectedCard = selected && (
-    <div className="rounded-md border border-slate-300 bg-white p-3 shadow-lg">
-      <div className="flex items-start justify-between gap-2">
-        <Link href={`/products/${encodeURIComponent(selected.slug ?? '')}`} className="font-bold hover:text-brand-700">
-          {selected.name}
-        </Link>
-        <button type="button" onClick={() => setSelected(null)} aria-label={t('close')} className="grid h-9 w-9 shrink-0 place-items-center rounded hover:bg-slate-100">
-          <CloseIcon className="h-5 w-5" />
-        </button>
-      </div>
-      <div className="my-2">
-        <Price price={selected.price} salePrice={selected.salePrice} />
-      </div>
-      <AddToCart
-        productId={selected.id}
-        slug={selected.slug ?? ''}
-        name={selected.name ?? selected.sku}
-        price={selected.salePrice ?? selected.price}
-        image={selected.image}
-        stock={selected.stock}
-      />
-    </div>
-  );
-
-  const basketBar = (
-    <div className="flex items-center justify-between gap-2 rounded-md bg-brand-700 px-3 py-2 text-white shadow-lg">
-      <span className="flex items-center gap-2 text-sm">
-        <CartIcon className="h-5 w-5" />
-        {cartCount > 0 ? (
-          <b>
-            {formatNumber(cartCount, locale)} · {formatNumber(cartTotal, locale)} {tc('currency')}
-          </b>
-        ) : (
-          t('basketEmpty')
-        )}
-      </span>
-      {cartCount > 0 && (
-        <button type="button" onClick={() => ctrl.current?.goTo('counter', true)} className="rounded bg-white px-3 py-1.5 text-xs font-bold text-brand-800">
-          {t('checkout')}
-        </button>
-      )}
-    </div>
-  );
-
+  // ---------------------------------------------------------------- the full view
   return (
-    <div className="space-y-3">
-      {/* desktop toolbar (phones use the bottom dock inside the store) */}
-      <div className="hidden flex-wrap items-center gap-2 md:flex">
-        <button type="button" onClick={() => ctrl.current?.goTo('entrance')} className="btn-outline h-9">
-          {t('entrance')}
-        </button>
-        <button type="button" onClick={() => ctrl.current?.goTo('deals')} className="btn-outline h-9">
-          {t('dealsTitle')}
-        </button>
-        {aisles.map((a, i) => (
-          <button key={a.id} type="button" onClick={() => ctrl.current?.goAisle(i)} className="btn-outline h-9">
-            {a.name}
-          </button>
-        ))}
-        <form
-          className="relative w-64"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (results[0]) guideTo(results[0].p.id);
-          }}
+    <div ref={stageRef} className="fixed inset-0 z-[56] h-[100dvh] bg-white" role="dialog" aria-label={t('title')}>
+      {/* dir=ltr: the 3D canvas has no text direction; overlays below follow the page direction */}
+      <div ref={mountRef} dir="ltr" className="h-full w-full overflow-hidden bg-slate-100" />
+
+      {/* back to the page */}
+      <button type="button" onClick={exit} className="absolute start-2 top-2 z-20 flex h-11 items-center gap-1.5 rounded-md border border-slate-300 bg-white/95 px-3 text-sm font-bold text-slate-700 shadow active:bg-brand-100">
+        <CloseIcon className="h-5 w-5" />
+        {t('backToPage')}
+      </button>
+
+      {remainingSeconds != null && (
+        <div
+          role="timer"
+          aria-label={t('timeLeft')}
+          title={t('timeLeft')}
+          className={`pointer-events-none absolute start-1/2 top-3 -translate-x-1/2 rounded-full px-3 py-1 text-sm font-bold text-white shadow ${
+            remainingSeconds <= 60 ? 'bg-red-600' : 'bg-slate-800/85'
+          }`}
         >
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('findPlaceholder')} aria-label={t('find')} className="input h-9" />
-          {norm(query).length >= 2 && (
-            <ul className="absolute inset-x-0 top-full z-30 mt-1 overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg">
-              {results.length === 0 && <li className="px-3 py-2 text-sm text-slate-500">{t('noMatch')}</li>}
-              {results.map(({ p, aisle }) => (
-                <li key={p.id}>
-                  <button type="button" className="flex w-full items-center justify-between gap-2 px-3 py-2 text-start text-sm hover:bg-brand-50" onClick={() => guideTo(p.id)}>
-                    <span className="line-clamp-1">{p.name}</span>
-                    <span className="shrink-0 text-xs text-brand-700">{aisle}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </form>
-        <button type="button" onClick={() => setTour(0)} className="h-9 rounded-md border border-accent-500 bg-accent-50 px-3 text-xs font-bold text-accent-600">
-          ? {t('helpButton')}
+          ⏱ {minSec(remainingSeconds, locale)}
+        </div>
+      )}
+
+      <div className="pointer-events-none absolute start-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/90 ring-1 ring-black/40" aria-hidden />
+
+      {/* zoom + re-center */}
+      <div className="absolute end-2 top-1/2 z-10 flex -translate-y-1/2 flex-col gap-2 md:end-3">
+        <button type="button" className={iconBtn} aria-label={t('zoomIn')} title={t('zoomIn')} onClick={() => ctrl.current?.zoomBy(1.3)}>
+          +
         </button>
-        <button type="button" onClick={() => setSound((v) => !v)} aria-pressed={sound} className={`h-9 rounded-md border px-3 text-xs font-bold ${sound ? 'border-brand-600 bg-brand-50 text-brand-700' : 'border-slate-300 bg-white text-slate-600'}`}>
-          {sound ? t('soundOn') : t('soundOff')}
+        <button type="button" className={iconBtn} aria-label={t('zoomOut')} title={t('zoomOut')} onClick={() => ctrl.current?.zoomBy(1 / 1.3)}>
+          −
         </button>
-        <button type="button" onClick={toggleFull} className="h-9 rounded-md border border-slate-300 bg-white px-3 text-xs font-bold text-slate-600">
-          {full ? t('exitFullscreen') : t('fullscreen')}
+        <button type="button" className={iconBtn} aria-label={t('recenter')} title={t('recenter')} onClick={() => ctrl.current?.recenter()}>
+          ●
         </button>
-        <button type="button" onClick={() => setLow((v) => !v)} aria-pressed={low} className={`h-9 rounded-md border px-3 text-xs font-bold ${low ? 'border-brand-600 bg-brand-50 text-brand-700' : 'border-slate-300 bg-white text-slate-600'}`}>
-          {low ? t('highQuality') : t('lowQuality')}
-        </button>
-        <Link href="/products" className="ms-auto text-sm font-bold text-brand-700 hover:underline">
-          {t('listView')}
-        </Link>
       </div>
 
+      {notice && (
+        <p className="absolute inset-x-3 bottom-32 mx-auto max-w-md rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 shadow">{t('notOnShelf')}</p>
+      )}
+
+      {hover && <p className="pointer-events-none absolute bottom-32 start-1/2 hidden max-w-[60%] -translate-x-1/2 truncate rounded bg-slate-900/80 px-3 py-1 text-sm text-white md:block">{hover}</p>}
+
+      {/* contextual tip (desktop) */}
+      {tour === null && (
+        <p className="pointer-events-none absolute bottom-32 start-3 hidden max-w-[40%] rounded bg-white/90 px-3 py-1.5 text-xs text-slate-700 shadow md:block">💡 {tip}</p>
+      )}
+
+      {/* minimap: a corner widget on desktop, a big tap-to-drive map sheet via the Map button */}
       <div
-        ref={stageRef}
-        className={coarse && immersive ? 'fixed inset-0 z-[56] h-[100dvh] bg-white' : fs ? 'relative h-screen bg-white' : 'relative bg-white'}
+        className={
+          sheet === 'map'
+            ? 'absolute inset-x-3 top-1/2 z-30 mx-auto max-w-lg -translate-y-1/2 rounded-md border border-slate-300 bg-white p-2 shadow-2xl'
+            : 'absolute end-3 top-3 hidden rounded-md border border-slate-300 bg-white/90 p-1 shadow md:block'
+        }
       >
-        {/* dir=ltr: the 3D canvas has no text direction; overlays below follow the page direction */}
-        <div
-          ref={mountRef}
-          dir="ltr"
-          className={`w-full overflow-hidden bg-slate-100 ${full ? 'h-full' : 'h-[72vh] min-h-[460px] rounded-md border border-slate-300'}`}
-        />
-
-        {/* phones: leave the full-window mode */}
-        {coarse && immersive && (
-          <button type="button" onClick={() => setImmersive(false)} aria-label={t('exitFullscreen')} className={`${iconBtn} absolute start-2 top-2 z-20`}>
-            <CloseIcon className="h-5 w-5" />
-          </button>
-        )}
-
-        {remainingSeconds != null && (
-          <div
-            role="timer"
-            aria-label={t('timeLeft')}
-            title={t('timeLeft')}
-            className={`pointer-events-none absolute start-1/2 top-3 -translate-x-1/2 rounded-full px-3 py-1 text-sm font-bold text-white shadow ${
-              remainingSeconds <= 60 ? 'bg-red-600' : 'bg-slate-800/85'
-            }`}
-          >
-            ⏱ {minSec(remainingSeconds, locale)}
+        {sheet === 'map' && (
+          <div className="mb-1 flex items-center justify-between">
+            <span className="text-sm font-bold">{t('map')}</span>
+            <button type="button" onClick={() => setSheet(null)} aria-label={t('close')} className="grid h-9 w-9 place-items-center rounded hover:bg-slate-100">
+              <CloseIcon className="h-5 w-5" />
+            </button>
           </div>
         )}
-
-        <div className="pointer-events-none absolute start-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/90 ring-1 ring-black/40" aria-hidden />
-
-        {/* zoom + re-center (all devices) */}
-        <div className="absolute end-2 top-1/2 z-10 flex -translate-y-1/2 flex-col gap-2 md:end-3">
-          <button type="button" className={iconBtn} aria-label={t('zoomIn')} title={t('zoomIn')} onClick={() => ctrl.current?.zoomBy(1.3)}>
-            +
-          </button>
-          <button type="button" className={iconBtn} aria-label={t('zoomOut')} title={t('zoomOut')} onClick={() => ctrl.current?.zoomBy(1 / 1.3)}>
-            −
-          </button>
-          <button type="button" className={iconBtn} aria-label={t('recenter')} title={t('recenter')} onClick={() => ctrl.current?.recenter()}>
-            ●
-          </button>
-        </div>
-
-        {notice && (
-          <p className="absolute inset-x-3 bottom-32 mx-auto max-w-md rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 shadow md:bottom-16">{t('notOnShelf')}</p>
-        )}
-
-        {hover && <p className="pointer-events-none absolute bottom-3 start-1/2 hidden max-w-[60%] -translate-x-1/2 truncate rounded bg-slate-900/80 px-3 py-1 text-sm text-white md:block">{hover}</p>}
-
-        {/* contextual tip (desktop) */}
-        {tour === null && (
-          <p className="pointer-events-none absolute bottom-3 start-3 hidden max-w-[40%] rounded bg-white/90 px-3 py-1.5 text-xs text-slate-700 shadow md:block">💡 {tip}</p>
-        )}
-
-        {/* minimap: a corner widget on desktop, a big tap-to-drive map sheet on phones */}
-        <div
-          className={
-            sheet === 'map'
-              ? 'absolute inset-x-3 top-1/2 z-30 -translate-y-1/2 rounded-md border border-slate-300 bg-white p-2 shadow-2xl'
-              : 'absolute end-3 top-3 hidden rounded-md border border-slate-300 bg-white/90 p-1 shadow md:block'
-          }
-        >
-          {sheet === 'map' && (
-            <div className="mb-1 flex items-center justify-between">
-              <span className="text-sm font-bold">{t('map')}</span>
-              <button type="button" onClick={() => setSheet(null)} aria-label={t('close')} className="grid h-9 w-9 place-items-center rounded hover:bg-slate-100">
-                <CloseIcon className="h-5 w-5" />
-              </button>
-            </div>
-          )}
-          <canvas
-            ref={mapRef}
-            width={336}
-            height={240}
-            aria-label={t('map')}
-            title={t('map')}
-            className={`block cursor-pointer ${sheet === 'map' ? 'h-auto w-full' : 'h-[120px] w-[168px]'}`}
-            onClick={(e) => {
-              const c = e.currentTarget;
-              const r = c.getBoundingClientRect();
-              ctrl.current?.mapClick(((e.clientX - r.left) * c.width) / r.width, ((e.clientY - r.top) * c.height) / r.height);
-              if (sheet === 'map') setSheet(null);
-            }}
-          />
-        </div>
-
-        {/* touch joystick: drag the knob; up = forward, sideways = steer */}
-        <div
-          ref={joyBase}
-          className="absolute bottom-[8.5rem] start-3 hidden h-32 w-32 touch-none select-none rounded-full border border-slate-300 bg-white/50 [@media(pointer:coarse)]:block"
-          aria-label={t('joystick')}
-          onPointerDown={(e) => {
-            e.currentTarget.setPointerCapture(e.pointerId);
-            joyId.current = e.pointerId;
-            joyMove(e);
+        <canvas
+          ref={mapRef}
+          width={336}
+          height={240}
+          aria-label={t('map')}
+          title={t('map')}
+          className={`block cursor-pointer ${sheet === 'map' ? 'h-auto w-full' : 'h-[120px] w-[168px]'}`}
+          onClick={(e) => {
+            const c = e.currentTarget;
+            const r = c.getBoundingClientRect();
+            ctrl.current?.mapClick(((e.clientX - r.left) * c.width) / r.width, ((e.clientY - r.top) * c.height) / r.height);
+            if (sheet === 'map') setSheet(null);
           }}
-          onPointerMove={(e) => joyId.current === e.pointerId && joyMove(e)}
-          onPointerUp={joyEnd}
-          onPointerCancel={joyEnd}
-        >
-          <div ref={joyKnob} className="pointer-events-none absolute start-1/2 top-1/2 -ms-6 -mt-6 grid h-12 w-12 place-items-center rounded-full bg-brand-600 text-white shadow-lg transition-transform duration-75">
-            ✥
-          </div>
-        </div>
-
-        {/* guided tour */}
-        {tour !== null && (
-          <div role="dialog" aria-label={t('helpButton')} className="absolute inset-x-3 bottom-16 z-20 mx-auto max-w-md rounded-md border border-slate-300 bg-white p-4 shadow-xl md:bottom-3">
-            <div className="mb-1 flex items-center justify-between text-xs text-slate-500">
-              <span>{t('tourStep', { n: tour + 1, total: TOUR_STEPS })}</span>
-              <button type="button" onClick={endTour} className="px-2 py-1 font-bold text-slate-500 hover:text-slate-800">
-                {t('tourSkip')}
-              </button>
-            </div>
-            <h3 className="font-extrabold">{t(`tour${tour + 1}Title`)}</h3>
-            <p className="mt-1 text-sm leading-7 text-slate-600">{t(`tour${tour + 1}Text`)}</p>
-            {coarse && tour <= 2 && <p className="mt-1 rounded bg-accent-50 p-2 text-xs leading-6 text-slate-700">📱 {t('tourTouch')}</p>}
-            <div className="mt-3 flex items-center justify-between gap-2">
-              <button type="button" className="btn-outline h-10 px-4 text-xs" disabled={tour === 0} onClick={() => setTour(tour - 1)}>
-                {t('tourPrev')}
-              </button>
-              <div className="flex gap-1" aria-hidden>
-                {Array.from({ length: TOUR_STEPS }, (_, i) => (
-                  <span key={i} className={`h-1.5 w-3 rounded-sm ${i === tour ? 'bg-brand-600' : 'bg-slate-300'}`} />
-                ))}
-              </div>
-              <button type="button" className="btn h-10 px-4 text-xs" onClick={() => (tour >= TOUR_STEPS - 1 ? endTour() : setTour(tour + 1))}>
-                {tour >= TOUR_STEPS - 1 ? t('tourDone') : t('tourNext')}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* desktop: selected product + basket in the corner */}
-        <div className="absolute bottom-3 end-3 hidden w-72 flex-col gap-2 md:flex">
-          {selectedCard}
-          {basketBar}
-        </div>
-
-        {/* phones: basket strip above the dock; the selected product opens as a bottom sheet */}
-        <div className="absolute inset-x-2 bottom-16 md:hidden">{basketBar}</div>
-        {selected && <div className="absolute inset-x-0 bottom-0 z-30 rounded-t-lg bg-white p-3 shadow-2xl md:hidden">{selectedCard}</div>}
-
-        {/* phone sheets */}
-        {sheet === 'aisles' && (
-          <div className="absolute inset-x-0 bottom-14 z-20 flex max-h-[72%] flex-col rounded-t-lg border border-slate-300 bg-white shadow-2xl md:hidden">
-            <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
-              <b>{t('dockAisles')}</b>
-              <button type="button" onClick={() => setSheet(null)} aria-label={t('close')} className="grid h-9 w-9 place-items-center rounded hover:bg-slate-100">
-                <CloseIcon className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="flex gap-2 overflow-x-auto border-b border-slate-100 p-2">
-              {aisles.map((a, i) => (
-                <button
-                  key={a.id}
-                  type="button"
-                  onClick={() => {
-                    setShelfAisle(i);
-                    ctrl.current?.goAisle(i); // the trolley parks there while you browse
-                  }}
-                  className={`h-10 shrink-0 rounded-full border px-4 text-sm font-bold ${i === shelfAisle ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-300 bg-white text-slate-700'}`}
-                >
-                  {a.name}
-                </button>
-              ))}
-            </div>
-            <ul className="grid flex-1 grid-cols-2 gap-2 overflow-y-auto p-2">
-              {shelf?.products.slice(0, MAX_PER_AISLE).map((p) => (
-                <li key={p.id} className="flex flex-col gap-1 rounded-md border border-slate-200 p-2">
-                  <ProductImage src={p.image} alt={p.name ?? p.sku} className="aspect-[4/3] w-full rounded" />
-                  <span className="line-clamp-2 min-h-[2.4rem] text-[13px] font-medium">{p.name}</span>
-                  <Price price={p.price} salePrice={p.salePrice} />
-                  <AddToCart size="compact" productId={p.id} slug={p.slug ?? ''} name={p.name ?? p.sku} price={p.salePrice ?? p.price} image={p.image} stock={p.stock} />
-                  <button type="button" onClick={() => guideTo(p.id)} className="h-9 rounded-md border border-slate-300 text-xs font-bold text-slate-600">
-                    📍 {t('showInStore')}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {sheet === 'search' && (
-          <div className="absolute inset-x-0 bottom-14 z-20 max-h-[72%] overflow-y-auto rounded-t-lg border border-slate-300 bg-white p-3 shadow-2xl md:hidden">
-            <div className="mb-2 flex items-center gap-2">
-              <input
-                autoFocus
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={t('findPlaceholder')}
-                aria-label={t('find')}
-                className="input h-11 text-base"
-              />
-              <button type="button" onClick={() => setSheet(null)} aria-label={t('close')} className="grid h-11 w-11 shrink-0 place-items-center rounded hover:bg-slate-100">
-                <CloseIcon className="h-5 w-5" />
-              </button>
-            </div>
-            {norm(query).length >= 2 && results.length === 0 && <p className="p-2 text-sm text-slate-500">{t('noMatch')}</p>}
-            <ul className="divide-y divide-slate-100">
-              {results.map(({ p, aisle }) => (
-                <li key={p.id}>
-                  <button type="button" onClick={() => guideTo(p.id)} className="flex min-h-12 w-full items-center gap-3 py-2 text-start">
-                    <ProductImage src={p.image} alt="" className="h-12 w-12 shrink-0 rounded" />
-                    <span className="flex-1 text-sm font-medium">{p.name}</span>
-                    <span className="shrink-0 text-xs text-brand-700">{aisle}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {sheet === 'more' && (
-          <div className="absolute inset-x-0 bottom-14 z-20 rounded-t-lg border border-slate-300 bg-white p-3 shadow-2xl md:hidden">
-            <div className="mb-2 flex items-center justify-between">
-              <b>{t('dockMore')}</b>
-              <button type="button" onClick={() => setSheet(null)} aria-label={t('close')} className="grid h-9 w-9 place-items-center rounded hover:bg-slate-100">
-                <CloseIcon className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="grid grid-cols-2 gap-2 text-sm font-bold">
-              <button type="button" className="btn-outline h-11" onClick={() => { setSheet(null); ctrl.current?.goTo('entrance'); }}>
-                {t('entrance')}
-              </button>
-              <button type="button" className="btn-outline h-11" onClick={() => { setSheet(null); ctrl.current?.goTo('counter'); }}>
-                {t('counter')}
-              </button>
-              <button type="button" className="btn-outline h-11" onClick={() => { setSheet(null); setTour(0); }}>
-                ? {t('helpButton')}
-              </button>
-              <button type="button" aria-pressed={sound} className="btn-outline h-11" onClick={() => setSound((v) => !v)}>
-                {sound ? t('soundOn') : t('soundOff')}
-              </button>
-              <button type="button" aria-pressed={low} className="btn-outline h-11" onClick={() => setLow((v) => !v)}>
-                {low ? t('highQuality') : t('lowQuality')}
-              </button>
-              <button type="button" className="btn-outline h-11" onClick={() => { setSheet(null); setImmersive((v) => !v); }}>
-                {immersive ? t('exitFullscreen') : t('fullscreen')}
-              </button>
-              <Link href="/products" className="btn-outline col-span-2 h-11">
-                {t('listView')}
-              </Link>
-            </div>
-          </div>
-        )}
-
-        {/* phone dock */}
-        <nav className="absolute inset-x-0 bottom-0 z-20 flex h-14 divide-x divide-slate-200 border-t border-slate-300 bg-white/95 rtl:divide-x-reverse md:hidden" aria-label={t('title')}>
-          <button type="button" className={dockBtn(sheet === 'aisles')} onClick={() => toggleSheet('aisles')}>
-            <span aria-hidden className="text-lg">🏬</span>
-            {t('dockAisles')}
-          </button>
-          <button type="button" className={dockBtn(sheet === 'search')} onClick={() => toggleSheet('search')}>
-            <span aria-hidden className="text-lg">🔎</span>
-            {t('dockSearch')}
-          </button>
-          <button type="button" className={dockBtn(false)} onClick={() => { setSheet(null); ctrl.current?.goTo('deals'); }}>
-            <span aria-hidden className="text-lg">🏷️</span>
-            {t('dockOffers')}
-          </button>
-          <button type="button" className={dockBtn(sheet === 'map')} onClick={() => toggleSheet('map')}>
-            <span aria-hidden className="text-lg">🗺️</span>
-            {t('dockMap')}
-          </button>
-          <button type="button" className={dockBtn(sheet === 'more')} onClick={() => toggleSheet('more')}>
-            <span aria-hidden className="text-lg">⋯</span>
-            {t('dockMore')}
-          </button>
-        </nav>
-
-        {/* checkout at the counter, without leaving the store */}
-        {checkoutOpen && (
-          <div className="absolute inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/45 p-2 sm:items-center sm:p-3" onMouseDown={(e) => e.target === e.currentTarget && setCheckoutOpen(false)}>
-            <div role="dialog" aria-modal="true" aria-label={t('checkoutTitle')} className="w-full max-w-3xl rounded-md bg-white p-3 shadow-2xl sm:p-4">
-              <div className="mb-3 flex items-center justify-between border-b border-slate-200 pb-2">
-                <h2 className="text-lg font-extrabold">🧾 {t('checkoutTitle')}</h2>
-                <button type="button" onClick={() => setCheckoutOpen(false)} aria-label={t('close')} className="grid h-10 w-10 place-items-center rounded-md hover:bg-slate-100">
-                  <CloseIcon className="h-5 w-5" />
-                </button>
-              </div>
-
-              {cartItems.length > 0 && (
-                <div className="mb-4">
-                  <h3 className="mb-2 text-sm font-bold">{t('checkoutReview')}</h3>
-                  <ul className="divide-y divide-slate-100 rounded-md border border-slate-200">
-                    {cartItems.map((i) => (
-                      <li key={i.productId} className="flex items-center justify-between gap-3 p-2">
-                        <span className="line-clamp-1 text-sm">{i.name}</span>
-                        <span className="w-36 shrink-0">
-                          <AddToCart size="compact" productId={i.productId} slug={i.slug} name={i.name} price={i.price} image={i.image} stock={100} />
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              <CheckoutForm />
-            </div>
-          </div>
-        )}
+        />
       </div>
+
+      {/* touch joystick: drag the knob; up = forward, sideways = steer */}
+      <div
+        ref={joyBase}
+        className="absolute bottom-[8.5rem] start-3 hidden h-32 w-32 touch-none select-none rounded-full border border-slate-300 bg-white/50 [@media(pointer:coarse)]:block"
+        aria-label={t('joystick')}
+        onPointerDown={(e) => {
+          e.currentTarget.setPointerCapture(e.pointerId);
+          joyId.current = e.pointerId;
+          joyMove(e);
+        }}
+        onPointerMove={(e) => joyId.current === e.pointerId && joyMove(e)}
+        onPointerUp={joyEnd}
+        onPointerCancel={joyEnd}
+      >
+        <div ref={joyKnob} className="pointer-events-none absolute start-1/2 top-1/2 -ms-6 -mt-6 grid h-12 w-12 place-items-center rounded-full bg-brand-600 text-white shadow-lg transition-transform duration-75">
+          ✥
+        </div>
+      </div>
+
+      {/* guided tour */}
+      {tour !== null && (
+        <div role="dialog" aria-label={t('helpButton')} className="absolute inset-x-3 bottom-16 z-20 mx-auto max-w-md rounded-md border border-slate-300 bg-white p-4 shadow-xl">
+          <div className="mb-1 flex items-center justify-between text-xs text-slate-500">
+            <span>{t('tourStep', { n: tour + 1, total: TOUR_STEPS })}</span>
+            <button type="button" onClick={endTour} className="px-2 py-1 font-bold text-slate-500 hover:text-slate-800">
+              {t('tourSkip')}
+            </button>
+          </div>
+          <h3 className="font-extrabold">{t(`tour${tour + 1}Title`)}</h3>
+          <p className="mt-1 text-sm leading-7 text-slate-600">{t(`tour${tour + 1}Text`)}</p>
+          {coarse && tour <= 2 && <p className="mt-1 rounded bg-accent-50 p-2 text-xs leading-6 text-slate-700">📱 {t('tourTouch')}</p>}
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <button type="button" className="btn-outline h-10 px-4 text-xs" disabled={tour === 0} onClick={() => setTour(tour - 1)}>
+              {t('tourPrev')}
+            </button>
+            <div className="flex gap-1" aria-hidden>
+              {Array.from({ length: TOUR_STEPS }, (_, i) => (
+                <span key={i} className={`h-1.5 w-3 rounded-sm ${i === tour ? 'bg-brand-600' : 'bg-slate-300'}`} />
+              ))}
+            </div>
+            <button type="button" className="btn h-10 px-4 text-xs" onClick={() => (tour >= TOUR_STEPS - 1 ? endTour() : setTour(tour + 1))}>
+              {tour >= TOUR_STEPS - 1 ? t('tourDone') : t('tourNext')}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* basket strip above the dock */}
+      <div className="absolute inset-x-2 bottom-16 mx-auto max-w-lg">
+        <div className="flex items-center justify-between gap-2 rounded-md bg-brand-700 px-3 py-2 text-white shadow-lg">
+          <span className="flex items-center gap-2 text-sm">
+            <CartIcon className="h-5 w-5" />
+            {cartCount > 0 ? (
+              <b>
+                {formatNumber(cartCount, locale)} · {formatNumber(cartTotal, locale)} {tc('currency')}
+              </b>
+            ) : (
+              t('basketEmpty')
+            )}
+          </span>
+          {cartCount > 0 && (
+            <button type="button" onClick={() => ctrl.current?.goTo('counter', true)} className="rounded bg-white px-3 py-1.5 text-xs font-bold text-brand-800">
+              {t('checkout')}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* the selected product opens as a bottom sheet */}
+      {selected && (
+        <div className="absolute inset-x-0 bottom-0 z-30 mx-auto max-w-lg rounded-t-lg bg-white p-3 shadow-2xl">
+          <div className="rounded-md border border-slate-300 bg-white p-3">
+            <div className="flex items-start justify-between gap-2">
+              <Link href={`/products/${encodeURIComponent(selected.slug ?? '')}`} className="font-bold hover:text-brand-700">
+                {selected.name}
+              </Link>
+              <button type="button" onClick={() => setSelected(null)} aria-label={t('close')} className="grid h-9 w-9 shrink-0 place-items-center rounded hover:bg-slate-100">
+                <CloseIcon className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="my-2">
+              <Price price={selected.price} salePrice={selected.salePrice} />
+            </div>
+            <AddToCart
+              productId={selected.id}
+              slug={selected.slug ?? ''}
+              name={selected.name ?? selected.sku}
+              price={selected.salePrice ?? selected.price}
+              image={selected.image}
+              stock={selected.stock}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* panels opened from the dock */}
+      {sheet === 'aisles' && (
+        <div className={`${sheetBox} flex max-h-[72%] flex-col`}>
+          <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
+            <b>{t('dockAisles')}</b>
+            <button type="button" onClick={() => setSheet(null)} aria-label={t('close')} className="grid h-9 w-9 place-items-center rounded hover:bg-slate-100">
+              <CloseIcon className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="flex gap-2 overflow-x-auto border-b border-slate-100 p-2">
+            {aisles.map((a, i) => (
+              <button
+                key={a.id}
+                type="button"
+                onClick={() => {
+                  setShelfAisle(i);
+                  ctrl.current?.goAisle(i); // the trolley parks there while you browse
+                }}
+                className={`h-10 shrink-0 rounded-full border px-4 text-sm font-bold ${i === shelfAisle ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-300 bg-white text-slate-700'}`}
+              >
+                {a.name}
+              </button>
+            ))}
+          </div>
+          <ul className="grid flex-1 grid-cols-2 gap-2 overflow-y-auto p-2 sm:grid-cols-3">
+            {shelf?.products.slice(0, MAX_PER_AISLE).map((p) => (
+              <li key={p.id} className="flex flex-col gap-1 rounded-md border border-slate-200 p-2">
+                <ProductImage src={p.image} alt={p.name ?? p.sku} className="aspect-[4/3] w-full rounded" />
+                <span className="line-clamp-2 min-h-[2.4rem] text-[13px] font-medium">{p.name}</span>
+                <Price price={p.price} salePrice={p.salePrice} />
+                <AddToCart size="compact" productId={p.id} slug={p.slug ?? ''} name={p.name ?? p.sku} price={p.salePrice ?? p.price} image={p.image} stock={p.stock} />
+                <button type="button" onClick={() => guideTo(p.id)} className="h-9 rounded-md border border-slate-300 text-xs font-bold text-slate-600">
+                  📍 {t('showInStore')}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {sheet === 'search' && (
+        <div className={`${sheetBox} max-h-[72%] overflow-y-auto p-3`}>
+          <div className="mb-2 flex items-center gap-2">
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && results[0] && guideTo(results[0].p.id)}
+              placeholder={t('findPlaceholder')}
+              aria-label={t('find')}
+              className="input h-11 text-base"
+            />
+            <button type="button" onClick={() => setSheet(null)} aria-label={t('close')} className="grid h-11 w-11 shrink-0 place-items-center rounded hover:bg-slate-100">
+              <CloseIcon className="h-5 w-5" />
+            </button>
+          </div>
+          {norm(query).length >= 2 && results.length === 0 && <p className="p-2 text-sm text-slate-500">{t('noMatch')}</p>}
+          <ul className="divide-y divide-slate-100">
+            {results.map(({ p, aisle }) => (
+              <li key={p.id}>
+                <button type="button" onClick={() => guideTo(p.id)} className="flex min-h-12 w-full items-center gap-3 py-2 text-start">
+                  <ProductImage src={p.image} alt="" className="h-12 w-12 shrink-0 rounded" />
+                  <span className="flex-1 text-sm font-medium">{p.name}</span>
+                  <span className="shrink-0 text-xs text-brand-700">{aisle}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {sheet === 'more' && (
+        <div className={`${sheetBox} p-3`}>
+          <div className="mb-2 flex items-center justify-between">
+            <b>{t('dockMore')}</b>
+            <button type="button" onClick={() => setSheet(null)} aria-label={t('close')} className="grid h-9 w-9 place-items-center rounded hover:bg-slate-100">
+              <CloseIcon className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-sm font-bold">
+            <button type="button" className="btn-outline h-11" onClick={() => { setSheet(null); ctrl.current?.goTo('entrance'); }}>
+              {t('entrance')}
+            </button>
+            <button type="button" className="btn-outline h-11" onClick={() => { setSheet(null); ctrl.current?.goTo('counter'); }}>
+              {t('counter')}
+            </button>
+            <button type="button" className="btn-outline h-11" onClick={() => { setSheet(null); setTour(0); }}>
+              ? {t('helpButton')}
+            </button>
+            <button type="button" aria-pressed={sound} className="btn-outline h-11" onClick={() => setSound((v) => !v)}>
+              {sound ? t('soundOn') : t('soundOff')}
+            </button>
+            <button type="button" aria-pressed={low} className="btn-outline h-11" onClick={() => setLow((v) => !v)}>
+              {low ? t('highQuality') : t('lowQuality')}
+            </button>
+            {!coarse && (
+              <button type="button" className="btn-outline h-11" onClick={toggleFull}>
+                {fs ? t('exitFullscreen') : t('fullscreen')}
+              </button>
+            )}
+            <Link href="/products" className="btn-outline h-11">
+              {t('listView')}
+            </Link>
+            <button type="button" className="btn h-11" onClick={exit}>
+              {t('backToPage')}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* bottom menu */}
+      <nav className="absolute inset-x-0 bottom-0 z-20 flex h-14 divide-x divide-slate-200 border-t border-slate-300 bg-white/95 rtl:divide-x-reverse" aria-label={t('title')}>
+        <button type="button" className={dockBtn(sheet === 'aisles')} onClick={() => toggleSheet('aisles')}>
+          <span aria-hidden className="text-lg">🏬</span>
+          {t('dockAisles')}
+        </button>
+        <button type="button" className={dockBtn(sheet === 'search')} onClick={() => toggleSheet('search')}>
+          <span aria-hidden className="text-lg">🔎</span>
+          {t('dockSearch')}
+        </button>
+        <button type="button" className={dockBtn(false)} onClick={() => { setSheet(null); ctrl.current?.goTo('deals'); }}>
+          <span aria-hidden className="text-lg">🏷️</span>
+          {t('dockOffers')}
+        </button>
+        <button type="button" className={dockBtn(sheet === 'map')} onClick={() => toggleSheet('map')}>
+          <span aria-hidden className="text-lg">🗺️</span>
+          {t('dockMap')}
+        </button>
+        <button type="button" className={dockBtn(sheet === 'more')} onClick={() => toggleSheet('more')}>
+          <span aria-hidden className="text-lg">⋯</span>
+          {t('dockMore')}
+        </button>
+      </nav>
+
+      {/* checkout at the counter, without leaving the store */}
+      {checkoutOpen && (
+        <div className="absolute inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/45 p-2 sm:items-center sm:p-3" onMouseDown={(e) => e.target === e.currentTarget && setCheckoutOpen(false)}>
+          <div role="dialog" aria-modal="true" aria-label={t('checkoutTitle')} className="w-full max-w-3xl rounded-md bg-white p-3 shadow-2xl sm:p-4">
+            <div className="mb-3 flex items-center justify-between border-b border-slate-200 pb-2">
+              <h2 className="text-lg font-extrabold">🧾 {t('checkoutTitle')}</h2>
+              <button type="button" onClick={() => setCheckoutOpen(false)} aria-label={t('close')} className="grid h-10 w-10 place-items-center rounded-md hover:bg-slate-100">
+                <CloseIcon className="h-5 w-5" />
+              </button>
+            </div>
+
+            {cartItems.length > 0 && (
+              <div className="mb-4">
+                <h3 className="mb-2 text-sm font-bold">{t('checkoutReview')}</h3>
+                <ul className="divide-y divide-slate-100 rounded-md border border-slate-200">
+                  {cartItems.map((i) => (
+                    <li key={i.productId} className="flex items-center justify-between gap-3 p-2">
+                      <span className="line-clamp-1 text-sm">{i.name}</span>
+                      <span className="w-36 shrink-0">
+                        <AddToCart size="compact" productId={i.productId} slug={i.slug} name={i.name} price={i.price} image={i.image} stock={100} />
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <CheckoutForm />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

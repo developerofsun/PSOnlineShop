@@ -32,9 +32,9 @@ public class Shop3dController(AppDbContext db) : ControllerBase
     {
         var limit = await LimitAsync();
         var row = await GetRowAsync(create: true);
-        var now = DateTime.UtcNow;
-        // Another tab may already be counting: only restart when the last beat is old.
-        if (row.LastBeatAt is null || (now - row.LastBeatAt.Value).TotalSeconds > StaleSeconds) row.LastBeatAt = now;
+        // The customer has just entered the store: a new stretch begins now. (Time spent on the launcher page, or between
+        // two visits, must never be added by the next beat.)
+        row.LastBeatAt = DateTime.UtcNow;
         await SaveAsync();
         return await BuildAsync(row, limit);
     }

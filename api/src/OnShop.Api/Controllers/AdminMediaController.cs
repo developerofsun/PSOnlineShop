@@ -5,6 +5,9 @@ using OnShop.Api.Common;
 using OnShop.Api.Contracts;
 using OnShop.Domain;
 using OnShop.Infrastructure.Persistence;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats.Webp;
+using SixLabors.ImageSharp.Processing;
 
 namespace OnShop.Api.Controllers;
 
@@ -21,6 +24,7 @@ public static class MediaPolicy
 public class AdminMediaController(AppDbContext db, UploadsOptions uploads) : ControllerBase
 {
     private const long MaxBytes = 10 * 1024 * 1024;
+    private const int MaxDimension = 2400;
 
     private static readonly Dictionary<string, string> AllowedTypes = new()
     {
@@ -60,10 +64,37 @@ public class AdminMediaController(AppDbContext db, UploadsOptions uploads) : Con
         }
 
         Directory.CreateDirectory(uploads.PhysicalPath);
-        var name = $"{Guid.NewGuid():N}{ext}";
-        await using (var target = System.IO.File.Create(Path.Combine(uploads.PhysicalPath, name)))
-        await using (var source = file.OpenReadStream())
+
+        // Every image is stored as WebP. Animated GIFs are kept as-is because a still frame would lose the animation.
+        var name = $"{Guid.NewGuid():N}.webp";
+        long size;
+        if (ext == ".gif")
+        {
+            name = $"{Guid.NewGuid():N}.gif";
+            await using var target = System.IO.File.Create(Path.Combine(uploads.PhysicalPath, name));
+            await using var source = file.OpenReadStream();
             await source.CopyToAsync(target, ct);
+            size = file.Length;
+        }
+        else
+        {
+            try
+            {
+                await using var source = file.OpenReadStream();
+                using var image = await Image.LoadAsync(source, ct);
+                image.Mutate(x => x.AutoOrient());
+                if (image.Width > MaxDimension || image.Height > MaxDimension)
+                    image.Mutate(x => x.Resize(new ResizeOptions { Size = new Size(MaxDimension, MaxDimension), Mode = ResizeMode.Max }));
+                var path = Path.Combine(uploads.PhysicalPath, name);
+                await image.SaveAsWebpAsync(path, new WebpEncoder { Quality = 82 }, ct);
+                size = new FileInfo(path).Length;
+            }
+            catch (Exception e) when (e is UnknownImageFormatException or InvalidImageContentException)
+            {
+                return BadRequest(new { error = "تصویر قابل پردازش نیست." });
+            }
+            contentType = "image/webp";
+        }
 
         var media = new MediaFile
         {
@@ -71,7 +102,7 @@ public class AdminMediaController(AppDbContext db, UploadsOptions uploads) : Con
             OriginalName = Path.GetFileName(file.FileName),
             Url = "/uploads/" + name,
             ContentType = contentType,
-            Size = file.Length
+            Size = size
         };
         db.MediaFiles.Add(media);
         await db.SaveChangesAsync(ct);
