@@ -14,6 +14,7 @@ import PageEditPage from './pages/PageEdit';
 import PagesPage from './pages/Pages';
 import ProductEditPage from './pages/ProductEdit';
 import ProductsPage from './pages/Products';
+import ProductSyncPage from './pages/ProductSync';
 import RolesPage from './pages/Roles';
 import SettingsPage from './pages/Settings';
 import SlidersPage from './pages/Sliders';
@@ -68,7 +69,8 @@ export default function App() {
             <Route index element={<Home />} />
 
             <Route path="products" element={<Guard perm="products.manage"><ProductsPage /></Guard>} />
-            <Route path="products/new" element={<Guard perm="products.manage"><ProductEditPage /></Guard>} />
+            <Route path="product-sync" element={<Guard perm="products.manage"><ProductSyncPage /></Guard>} />
+            <Route path="products/new"element={<Guard perm="products.manage"><ProductEditPage /></Guard>} />
             <Route path="products/:id" element={<Guard perm="products.manage"><ProductEditPage /></Guard>} />
             <Route path="categories" element={<Guard perm="categories.manage"><CategoriesPage /></Guard>} />
             <Route path="orders" element={<Guard perm="orders.manage"><OrdersPage /></Guard>} />

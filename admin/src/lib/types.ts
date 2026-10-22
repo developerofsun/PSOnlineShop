@@ -67,6 +67,38 @@ export type AdminProductListItem = {
   isPublished: boolean;
   image: string | null;
   createdAt: string;
+  barcode: string | null;
+  needsReview: boolean;
+  missingFromFeed: boolean;
+  categoryId: number | null;
+  suggestedCategoryId: number | null;
+  suggestedCategoryName: string | null;
+};
+
+export type ProductSyncRun = {
+  id: number;
+  startedAt: string;
+  finishedAt: string | null;
+  status: 'Running' | 'Succeeded' | 'Failed';
+  trigger: 'Schedule' | 'Manual';
+  fetched: number;
+  created: number;
+  updated: number;
+  unchanged: number;
+  skipped: number;
+  notInFeed: number;
+  error: string | null;
+  warnings: string | null;
+};
+
+export type ProductSyncStatus = {
+  configured: boolean;
+  running: boolean;
+  enabled: boolean;
+  intervalMinutes: number;
+  pendingReview: number;
+  missingFromFeed: number;
+  runs: ProductSyncRun[];
 };
 
 export type ProductTranslation = {

@@ -267,3 +267,12 @@ images, SEO fields), categories, orders (status workflow), media library, settin
 - Store pages are rendered dynamically with cached API fetches (`revalidate: 30`) so builds don't need the API running.
 #   P S O n l i n e S h o p  
  
+## Product sync from Kyan (accounting system)
+The API pulls products from the Kyan relation manager (`GET {Kyan:BaseUrl}/products`, `X-Api-Key` header) on a schedule
+and on demand (admin → Products → Kyan sync).
+- Config: `Kyan:BaseUrl` (appsettings) and `Kyan:ApiKey` (never commit it: `dotnet user-secrets set "Kyan:ApiKey" "<key>"`
+  in `api/src/OnShop.Api`, or the `Kyan__ApiKey` environment variable). Enable/interval are admin settings (default every 15 min).
+- Identity is Kyan's `ItemID` (`Product.ExternalId`); an unlinked product with the same barcode/SKU is linked once.
+- Existing products: only name, regular price, sale price, stock and barcode change. New products are created unpublished in the
+  hidden "Uncategorized" category with a suggested category, and wait in the admin review list. Nothing is deleted;
+  products missing from the feed are left untouched and flagged. An empty/failed feed changes nothing.

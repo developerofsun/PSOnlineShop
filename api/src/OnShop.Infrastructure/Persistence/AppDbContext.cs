@@ -29,11 +29,19 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Favorite> Favorites => Set<Favorite>();
     public DbSet<Story> Stories => Set<Story>();
     public DbSet<StoryItem> StoryItems => Set<StoryItem>();
+    public DbSet<ProductSyncRun> ProductSyncRuns => Set<ProductSyncRun>();
     public DbSet<Shop3dUsage> Shop3dUsages => Set<Shop3dUsage>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
         base.OnModelCreating(b);
+
+        b.Entity<ProductSyncRun>(e =>
+        {
+            e.HasIndex(r => r.StartedAt);
+            e.Property(r => r.Status).HasMaxLength(16);
+            e.Property(r => r.Trigger).HasMaxLength(16);
+        });
 
         b.Entity<ContentText>(e => e.HasIndex(t => t.Key).IsUnique());
 
@@ -84,6 +92,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         {
             e.HasIndex(p => p.Sku).IsUnique();
             e.Property(p => p.Sku).HasMaxLength(64);
+            e.Property(p => p.Barcode).HasMaxLength(64);
+            e.HasIndex(p => p.ExternalId).IsUnique();
+            e.HasIndex(p => p.Barcode);
+            e.HasIndex(p => p.NeedsReview);
             e.HasOne(p => p.Category).WithMany(c => c.Products)
                 .HasForeignKey(p => p.CategoryId).OnDelete(DeleteBehavior.SetNull);
         });

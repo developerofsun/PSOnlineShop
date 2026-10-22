@@ -7,6 +7,7 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.IdentityModel.Tokens;
 using OnShop.Api.Controllers;
 using OnShop.Api.Services;
+using OnShop.Api.Services.ProductSync;
 using OnShop.Infrastructure;
 using OnShop.Infrastructure.Persistence;
 
@@ -45,6 +46,12 @@ builder.Services.AddScoped<IClaimsTransformation, PermissionClaimsTransformation
 builder.Services.AddScoped<CatalogService>();
 builder.Services.AddScoped<RecommendationService>();
 builder.Services.AddScoped<IAssistantBrain, RuleBasedAssistant>(); // swap for a local-LLM implementation later
+
+// Product sync from the accounting system (Kyan), on a schedule and on demand from the admin panel.
+builder.Services.AddHttpClient<KyanClient>(c => c.Timeout = TimeSpan.FromMinutes(2));
+builder.Services.AddScoped<ProductSyncService>();
+builder.Services.AddSingleton<ProductSyncRunner>();
+builder.Services.AddHostedService<ProductSyncBackgroundService>();
 
 // One policy per permission: [Authorize(Policy = Permissions.ProductsManage)].
 // Permission claims are added per request by PermissionClaimsTransformation.

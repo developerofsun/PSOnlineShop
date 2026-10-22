@@ -13,15 +13,18 @@ public class AdminProductsController(AppDbContext db) : ControllerBase
 {
     [HttpGet]
     public async Task<PagedResult<AdminProductListItem>> List(
-        [FromQuery] string? q, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+        [FromQuery] string? q, [FromQuery] int page = 1, [FromQuery] int pageSize = 20,
+        [FromQuery] bool needsReview = false)
     {
         var (p, size) = Paging.Clamp(page, pageSize);
         var def = Languages.Default;
         var query = db.Products.AsNoTracking().AsQueryable();
+        if (needsReview) query = query.Where(x => x.NeedsReview);
         if (!string.IsNullOrWhiteSpace(q))
         {
             var pattern = $"%{Text.Normalize(q).Trim()}%";
             query = query.Where(x => EF.Functions.ILike(x.Sku, pattern)
+                                     || (x.Barcode != null && EF.Functions.ILike(x.Barcode, pattern))
                                      || x.Translations.Any(t => EF.Functions.ILike(t.Name, pattern)));
         }
 
@@ -32,7 +35,10 @@ public class AdminProductsController(AppDbContext db) : ControllerBase
                 x.Translations.Where(t => t.Lang == def).Select(t => t.Name).FirstOrDefault(),
                 x.Price, x.SalePrice, x.Stock, x.IsPublished,
                 x.Images.OrderBy(i => i.SortOrder).Select(i => i.Url).FirstOrDefault(),
-                x.CreatedAt))
+                x.CreatedAt,
+                x.Barcode, x.NeedsReview, x.MissingFromFeed, x.CategoryId, x.SuggestedCategoryId,
+                db.CategoryTranslations.Where(t => t.CategoryId == x.SuggestedCategoryId && t.Lang == def)
+                    .Select(t => t.Name).FirstOrDefault()))
             .ToListAsync();
         return new PagedResult<AdminProductListItem>(items, total, p, size);
     }
@@ -73,6 +79,7 @@ public class AdminProductsController(AppDbContext db) : ControllerBase
         var error = await Apply(product, input, id);
         if (error is not null) return BadRequest(new { error });
         product.UpdatedAt = DateTime.UtcNow;
+        if (product.IsPublished) product.NeedsReview = false; // publishing is the review
         await db.SaveChangesAsync();
         return await Get(id);
     }

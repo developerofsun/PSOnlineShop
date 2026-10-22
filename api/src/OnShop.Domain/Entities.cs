@@ -56,8 +56,38 @@ public class Product : Entity
     public bool IsPublished { get; set; } = true;
     public int? CategoryId { get; set; }
     public Category? Category { get; set; }
+    /// <summary>Kyan ItemID when the product is kept in line with the accounting system (null for manual products).</summary>
+    public int? ExternalId { get; set; }
+    public string? Barcode { get; set; }
+    /// <summary>Imported by the sync and not yet reviewed by an admin (stays until it is published).</summary>
+    public bool NeedsReview { get; set; }
+    /// <summary>The sync's advisory category guess. Never applied without an admin's approval.</summary>
+    public int? SuggestedCategoryId { get; set; }
+    /// <summary>A linked product that the last successful sync did not find in the feed (kept exactly as it was).</summary>
+    public bool MissingFromFeed { get; set; }
     public List<ProductTranslation> Translations { get; set; } = [];
     public List<ProductImage> Images { get; set; } = [];
+}
+
+public class ProductSyncRun
+{
+    public int Id { get; set; }
+    public DateTime StartedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? FinishedAt { get; set; }
+    /// <summary>Running / Succeeded / Failed.</summary>
+    public string Status { get; set; } = "Running";
+    /// <summary>Schedule / Manual.</summary>
+    public string Trigger { get; set; } = "Schedule";
+    public int Fetched { get; set; }
+    public int Created { get; set; }
+    public int Updated { get; set; }
+    public int Unchanged { get; set; }
+    public int Skipped { get; set; }
+    /// <summary>Linked products that were not in this feed (left exactly as they were).</summary>
+    public int NotInFeed { get; set; }
+    public string? Error { get; set; }
+    /// <summary>Warnings (duplicates, barcode conflicts...), one per line, truncated.</summary>
+    public string? Warnings { get; set; }
 }
 
 public class ProductTranslation

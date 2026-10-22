@@ -12,11 +12,14 @@ import {
   TeamOutlined,
   UserOutlined,
 } from '@ant-design/icons';
-import { Avatar, Button, Dropdown, Layout, Menu, Space } from 'antd';
+import { useQuery } from '@tanstack/react-query';
+import { Alert, Avatar, Badge, Button, Dropdown, Layout, Menu, Space } from 'antd';
 import type { MenuProps } from 'antd';
 import { useMemo, useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import type { ProductSyncStatus } from '../lib/types';
 
 const { Sider, Header, Content } = Layout;
 
@@ -27,8 +30,18 @@ type Item = NonNullable<MenuProps['items']>[number];
 export default function AdminLayout() {
   const { user, logout, can } = useAuth();
   const nav = useNavigate();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const [collapsed, setCollapsed] = useState(false);
+
+  // Imported products waiting for review (shown as a badge and a banner on every page)
+  const canProducts = can('products.manage');
+  const { data: sync } = useQuery({
+    queryKey: ['product-sync'],
+    queryFn: () => api.get<ProductSyncStatus>('/api/admin/product-sync'),
+    enabled: canProducts,
+    refetchInterval: 60000,
+  });
+  const pendingReview = sync?.pendingReview ?? 0;
 
   // WordPress-style: dark sidebar with groups. Entries appear only when the user holds the permission.
   const items = useMemo(() => {
@@ -43,6 +56,16 @@ export default function AdminLayout() {
             children: [
               can('products.manage') ? { key: '/products', label: <Link to="/products">همه محصولات</Link> } : null,
               can('products.manage') ? { key: '/products/new', label: <Link to="/products/new">افزودن محصول</Link> } : null,
+              can('products.manage')
+                ? {
+                    key: '/product-sync',
+                    label: (
+                      <Link to="/product-sync">
+                        همگام‌سازی کیان <Badge count={pendingReview} size="small" />
+                      </Link>
+                    ),
+                  }
+                : null,
               can('categories.manage') ? { key: '/categories', icon: <TagsOutlined />, label: <Link to="/categories">دسته‌بندی‌ها</Link> } : null,
             ].filter(Boolean) as Item[],
           }
@@ -82,7 +105,7 @@ export default function AdminLayout() {
       can('settings.manage') ? { key: '/settings', icon: <SettingOutlined />, label: <Link to="/settings">تنظیمات</Link> } : null,
     ];
     return list.filter(Boolean) as Item[];
-  }, [can]);
+  }, [can, pendingReview]);
 
   const selected =
     pathname.startsWith('/products/') && pathname !== '/products/new' ? '/products' : pathname.startsWith('/pages/') && pathname !== '/pages/new' ? '/pages' : pathname;
@@ -142,6 +165,19 @@ export default function AdminLayout() {
           </Dropdown>
         </Header>
         <Content style={{ margin: 16 }}>
+          {pendingReview > 0 && pathname !== '/product-sync' && !(pathname === '/products' && search.includes('review=1')) && (
+            <Alert
+              type="info"
+              showIcon
+              style={{ marginBottom: 16 }}
+              message={`${new Intl.NumberFormat('fa-IR').format(pendingReview)} محصول جدید از کیان وارد شده و منتظر بررسی شماست`}
+              action={
+                <Link to="/products?review=1">
+                  <Button size="small">بررسی</Button>
+                </Link>
+              }
+            />
+          )}
           <Outlet />
         </Content>
       </Layout>

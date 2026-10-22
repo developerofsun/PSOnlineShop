@@ -50,7 +50,9 @@ public record ProductInput(
 
 public record AdminProductListItem(
     int Id, string Sku, string? Name, long Price, long? SalePrice, int Stock,
-    bool IsPublished, string? Image, DateTime CreatedAt);
+    bool IsPublished, string? Image, DateTime CreatedAt,
+    string? Barcode = null, bool NeedsReview = false, bool MissingFromFeed = false,
+    int? CategoryId = null, int? SuggestedCategoryId = null, string? SuggestedCategoryName = null);
 
 public record AdminProductDetail(
     int Id, string Sku, long Price, long? SalePrice, int Stock, bool IsPublished, int? CategoryId,
