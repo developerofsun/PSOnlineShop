@@ -57,7 +57,7 @@ export default function AddToCart({ productId, slug, name, price, image, stock, 
     <div
       role="group"
       aria-label={name}
-      className={`flex w-full items-center justify-between overflow-hidden rounded-md border border-brand-600 bg-white ${size === 'normal' ? 'sm:w-auto sm:min-w-[9rem]' : ''}`}
+      className={`flex w-full items-center justify-between overflow-hidden rounded-lg border border-brand-600 bg-white ${size === 'normal' ? 'sm:w-auto sm:min-w-[9rem]' : ''}`}
     >
       <button
         type="button"

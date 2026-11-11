@@ -207,7 +207,7 @@ export default function ShopView({
         {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{t('error')}</p>}
 
         {items.length > 0 ? (
-          <div className={`grid grid-cols-2 gap-4 transition-opacity md:grid-cols-3 xl:grid-cols-4 ${loading ? 'opacity-50' : ''}`}>
+          <div className={`grid grid-cols-2 gap-x-4 gap-y-8 transition-opacity md:grid-cols-3 xl:grid-cols-4 ${loading ? 'opacity-50' : ''}`}>
             {items.map((p) => (
               <ProductCard key={p.id} product={p} />
             ))}

@@ -9,19 +9,19 @@ import { useCompare } from '@/lib/compare';
 import { useFavorites } from '@/lib/favorites';
 import { formatNumber } from '@/lib/format';
 import { useUi } from '@/lib/ui';
-import { CartIcon, CompareIcon, HeartIcon, UserIcon } from './icons';
+import { CartIcon, CompareIcon, HeartIcon, SearchIcon, UserIcon } from './icons';
 
 function Badge({ n, locale }: { n: number; locale: string }) {
   if (n <= 0) return null;
   return (
     // key = count: the small "bump" animation replays each time the number changes (that is the only cart animation)
-    <span key={n} className="absolute -end-1.5 -top-1.5 grid min-w-[1.1rem] animate-bump place-items-center rounded-full bg-accent-500 px-1 text-[10px] font-bold leading-4 text-white">
+    <span key={n} className="absolute -end-1.5 -top-1.5 grid min-w-[1.1rem] animate-bump place-items-center rounded-full bg-accent-500 px-1 text-[10px] font-bold leading-4 text-slate-900">
       {formatNumber(n, locale)}
     </span>
   );
 }
 
-const iconBtn = 'relative grid h-10 w-10 place-items-center rounded-md text-slate-600 transition-colors hover:bg-slate-100 hover:text-brand-700';
+const iconBtn = 'site-header-icon relative grid place-items-center rounded-lg text-slate-600 transition-colors hover:bg-slate-100 hover:text-brand-700';
 
 export default function HeaderActions() {
   const t = useTranslations('common');
@@ -32,6 +32,7 @@ export default function HeaderActions() {
   const compareCount = useCompare((s) => s.ids.length);
   const user = useAuth((s) => s.user);
   const setCartOpen = useUi((s) => s.setCartOpen);
+  const setSearchOpen = useUi((s) => s.setSearchOpen);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
@@ -45,6 +46,9 @@ export default function HeaderActions() {
         <HeartIcon className="h-5 w-5" />
         {mounted && <Badge n={favCount} locale={locale} />}
       </Link>
+      <button type="button" onClick={() => setSearchOpen(true)} className={`${iconBtn} md:hidden`} aria-label={t('search')} title={t('search')}>
+        <SearchIcon className="h-5 w-5" />
+      </button>
       <Link
         href={mounted && user ? '/account' : '/account/login'}
         className={iconBtn}
@@ -57,14 +61,14 @@ export default function HeaderActions() {
       <button
         type="button"
         onClick={() => setCartOpen(true)}
-        className="ms-1 flex h-10 items-center gap-2 rounded-md bg-brand-600 px-3 text-white transition-colors hover:bg-brand-700"
+        className="site-header-cart ms-1 flex items-center gap-2 rounded-lg px-3 text-white transition-colors"
         aria-label={t('cart')}
       >
         <span className="relative">
           <CartIcon className="h-5 w-5" />
           {mounted && <Badge n={cartCount} locale={locale} />}
         </span>
-        <span className="hidden text-sm font-bold lg:inline">
+        <span className="hidden text-sm font-semibold lg:inline">
           {mounted && cartTotal > 0 ? `${formatNumber(cartTotal, locale)} ${t('currency')}` : t('cart')}
         </span>
       </button>

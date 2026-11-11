@@ -28,7 +28,7 @@ export default function HeroSlider({ slides, intervalMs = 5500 }: { slides: Slid
 
   return (
     <section
-      className="relative aspect-[16/6] min-h-[170px] w-full overflow-hidden rounded-md bg-slate-200"
+      className="relative aspect-[16/6] min-h-[170px] w-full overflow-hidden rounded-xl bg-slate-200"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
       onFocus={() => setPaused(true)}
@@ -55,10 +55,10 @@ export default function HeroSlider({ slides, intervalMs = 5500 }: { slides: Slid
             >
               {(s.title || s.subtitle || s.buttonText) && (
                 <div className={`max-w-lg space-y-2 p-5 text-white sm:space-y-3 sm:p-10 ${s.imageUrl ? 'bg-black/35' : ''}`}>
-                  {s.title && <h2 className="text-xl font-extrabold leading-snug sm:text-4xl">{s.title}</h2>}
+                  {s.title && <h2 className="font-display text-2xl leading-snug sm:text-5xl">{s.title}</h2>}
                   {s.subtitle && <p className="text-sm sm:text-lg">{s.subtitle}</p>}
                   {s.buttonText && s.linkUrl && (
-                    <span className="inline-block rounded-md bg-white px-5 py-2 text-sm font-bold text-brand-800">{s.buttonText}</span>
+                    <span className="inline-block rounded-lg bg-white px-5 py-2 text-sm font-semibold text-brand-800">{s.buttonText}</span>
                   )}
                 </div>
               )}
@@ -73,7 +73,7 @@ export default function HeroSlider({ slides, intervalMs = 5500 }: { slides: Slid
             type="button"
             aria-label={t('previous')}
             onClick={() => go(index - 1)}
-            className="absolute start-2 top-1/2 hidden h-9 w-9 -translate-y-1/2 place-items-center rounded-md bg-white/90 text-slate-700 hover:bg-white sm:grid"
+            className="absolute start-2 top-1/2 hidden h-9 w-9 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-slate-700 hover:bg-white sm:grid"
           >
             <ChevronIcon className="h-5 w-5 ltr:rotate-180" />
           </button>
@@ -81,7 +81,7 @@ export default function HeroSlider({ slides, intervalMs = 5500 }: { slides: Slid
             type="button"
             aria-label={t('next')}
             onClick={() => go(index + 1)}
-            className="absolute end-2 top-1/2 hidden h-9 w-9 -translate-y-1/2 place-items-center rounded-md bg-white/90 text-slate-700 hover:bg-white sm:grid"
+            className="absolute end-2 top-1/2 hidden h-9 w-9 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-slate-700 hover:bg-white sm:grid"
           >
             <ChevronIcon className="h-5 w-5 rtl:rotate-180" />
           </button>
@@ -93,7 +93,7 @@ export default function HeroSlider({ slides, intervalMs = 5500 }: { slides: Slid
                 aria-label={`${i + 1}`}
                 aria-current={i === index}
                 onClick={() => setIndex(i)}
-                className={`h-1.5 rounded-sm transition-all ${i === index ? 'w-6 bg-white' : 'w-3 bg-white/60'}`}
+                className={`h-1.5 rounded-full transition-all ${i === index ? 'w-6 bg-white' : 'w-3 bg-white/60'}`}
               />
             ))}
           </div>

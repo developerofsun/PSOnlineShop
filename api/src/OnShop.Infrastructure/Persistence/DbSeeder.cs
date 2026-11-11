@@ -1,8 +1,6 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -32,41 +30,25 @@ public static class DbSeeder
             await db.Database.EnsureDeletedAsync();
         }
 
-        // If you have generated EF migrations, they are applied. Otherwise the schema is created directly.
+        // The schema is owned by EF migrations (api/src/OnShop.Infrastructure/Persistence/Migrations).
+        // Never use EnsureCreated here: it bypasses the migration history and makes later schema changes impossible.
         var migrations = db.Database.GetMigrations().ToList(); // sync only: there is no GetMigrationsAsync
         log.LogInformation("EF migrations found in the project: {Count}", migrations.Count);
-        if (migrations.Count > 0)
-            await db.Database.MigrateAsync();
-        else
-            await db.Database.EnsureCreatedAsync();
+        if (migrations.Count == 0)
+            throw new InvalidOperationException(
+                "No EF migrations were found. Generate them with: " +
+                "dotnet ef migrations add InitialCreate -p api/src/OnShop.Infrastructure -s api/src/OnShop.Api " +
+                "-o Persistence/Migrations");
+
+        await BaselineIfNeededAsync(db, migrations, log);
+        await db.Database.MigrateAsync();
 
         if (!await HasTableAsync(db, "AspNetRoles"))
-        {
-            if (migrations.Count > 0)
-                throw new InvalidOperationException(
-                    $"Database '{connection.Database}' has {migrations.Count} EF migration(s) but no AspNetRoles table: " +
-                    "the migration is empty or its history is out of sync. Delete the Migrations folder under api/src " +
-                    "(or regenerate it), then set Database:RecreateOnStart=true in appsettings.Development.json and run once.");
-
-            // EnsureCreated does nothing when the database already contains ANY table (for example a stale
-            // __EFMigrationsHistory left by an earlier attempt). Create our tables explicitly instead.
-            log.LogWarning("Schema missing although the database is not empty; creating tables explicitly.");
-            await db.Database.GetService<IRelationalDatabaseCreator>().CreateTablesAsync();
-
-            if (!await HasTableAsync(db, "AspNetRoles"))
-                throw new InvalidOperationException($"Could not create the schema in database '{connection.Database}'.");
-        }
-
-        // EnsureCreated never alters an existing schema, so a database created by an older version of the app
-        // lacks newer tables/columns. Detect that and explain, instead of failing later with SQL errors.
-        if (migrations.Count == 0 && !await SchemaIsCurrentAsync(db))
             throw new InvalidOperationException(
-                $"Database '{connection.Database}' was created by an older version of OnShop and lacks newer tables or columns. " +
-                "Set Database:RecreateOnStart=true in appsettings.Development.json, run once, then set it back to false. " +
-                "To keep data across future changes, switch to EF migrations (see README).");
+                $"Database '{connection.Database}' has {migrations.Count} EF migration(s) but no AspNetRoles table: " +
+                "the migration is empty or its history is out of sync. Delete the Migrations folder under api/src " +
+                "(or regenerate it), then set Database:RecreateOnStart=true in appsettings.Development.json and run once.");
 
-        if (migrations.Count == 0) await EnsureUsageTableAsync(db);
-        if (migrations.Count == 0) await EnsureProductSyncSchemaAsync(db);
         await EnableTrigramAsync(db, log);
         await SeedIdentityAsync(sp, config, log);
         await SeedSettingsAsync(db);
@@ -77,6 +59,38 @@ public static class DbSeeder
             await SeedSampleStoriesAsync(db);
         }
         await BackfillSearchTextAsync(db);
+    }
+
+    /// <summary>
+    /// A database created by an older version of the app (EnsureCreated) already has every table but no
+    /// __EFMigrationsHistory, so MigrateAsync would try to create the tables again and fail. Record the initial
+    /// migration as already applied instead. Only safe when the schema really is current: otherwise the app would
+    /// believe a migration ran that never did, so refuse and ask for a reset.
+    /// </summary>
+    private static async Task BaselineIfNeededAsync(AppDbContext db, IReadOnlyList<string> migrations, ILogger log)
+    {
+        if (!await HasTableAsync(db, "AspNetRoles")) return; // empty database: MigrateAsync creates everything
+        if (await HasTableAsync(db, "__EFMigrationsHistory")) return; // already under migration control
+
+        if (!await SchemaIsCurrentAsync(db))
+            throw new InvalidOperationException(
+                $"Database '{db.Database.GetDbConnection().Database}' was created by an older version of OnShop and " +
+                "lacks newer tables or columns, so it cannot be adopted by the initial migration. " +
+                "Set Database:RecreateOnStart=true in appsettings.Development.json, run once, then set it back to false. " +
+                "In production, restore a backup or create a fresh database.");
+
+        var initial = migrations[0];
+        log.LogWarning(
+            "Existing database has no migration history; recording '{Migration}' as already applied (baseline).",
+            initial);
+        await db.Database.ExecuteSqlRawAsync(
+            "CREATE TABLE IF NOT EXISTS \"__EFMigrationsHistory\" (" +
+            "\"MigrationId\" character varying(150) NOT NULL PRIMARY KEY, " +
+            "\"ProductVersion\" character varying(32) NOT NULL)");
+        await db.Database.ExecuteSqlRawAsync(
+            "INSERT INTO \"__EFMigrationsHistory\" (\"MigrationId\", \"ProductVersion\") VALUES ({0}, {1}) " +
+            "ON CONFLICT (\"MigrationId\") DO NOTHING",
+            initial, "8.0.0");
     }
 
     private static Task<bool> HasTableAsync(AppDbContext db, string table) =>
@@ -99,51 +113,6 @@ public static class DbSeeder
         && await HasColumnAsync(db, "Orders", "Lat")
         && await HasColumnAsync(db, "Addresses", "Lat");
 
-    /// <summary>
-    /// The 3D-usage table was added after the schema check was written. Create it in place (no database reset needed)
-    /// when an older database lacks it. Matches the EF model: see AppDbContext.
-    /// </summary>
-    private static async Task EnsureUsageTableAsync(AppDbContext db)
-    {
-        if (await HasTableAsync(db, "Shop3dUsages")) return;
-        await db.Database.ExecuteSqlRawAsync(
-            "CREATE TABLE IF NOT EXISTS \"Shop3dUsages\" (" +
-            "\"Id\" integer GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, " +
-            "\"UserId\" integer NOT NULL REFERENCES \"AspNetUsers\"(\"Id\") ON DELETE CASCADE, " +
-            "\"Day\" character varying(10) NOT NULL, " +
-            "\"Seconds\" integer NOT NULL, " +
-            "\"LastBeatAt\" timestamp with time zone NULL)");
-        await db.Database.ExecuteSqlRawAsync(
-            "CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Shop3dUsages_UserId_Day\" ON \"Shop3dUsages\" (\"UserId\", \"Day\")");
-    }
-
-    /// <summary>
-    /// The Kyan product sync added columns on Products and the ProductSyncRuns table after the schema check was written.
-    /// Patch an older database in place (idempotent; a fresh database already has them from the EF model).
-    /// </summary>
-    private static async Task EnsureProductSyncSchemaAsync(AppDbContext db)
-    {
-        await db.Database.ExecuteSqlRawAsync(
-            "ALTER TABLE \"Products\" ADD COLUMN IF NOT EXISTS \"ExternalId\" integer NULL, " +
-            "ADD COLUMN IF NOT EXISTS \"Barcode\" character varying(64) NULL, " +
-            "ADD COLUMN IF NOT EXISTS \"NeedsReview\" boolean NOT NULL DEFAULT false, " +
-            "ADD COLUMN IF NOT EXISTS \"SuggestedCategoryId\" integer NULL, " +
-            "ADD COLUMN IF NOT EXISTS \"MissingFromFeed\" boolean NOT NULL DEFAULT false");
-        await db.Database.ExecuteSqlRawAsync("CREATE UNIQUE INDEX IF NOT EXISTS \"IX_Products_ExternalId\" ON \"Products\" (\"ExternalId\")");
-        await db.Database.ExecuteSqlRawAsync("CREATE INDEX IF NOT EXISTS \"IX_Products_Barcode\" ON \"Products\" (\"Barcode\")");
-        await db.Database.ExecuteSqlRawAsync("CREATE INDEX IF NOT EXISTS \"IX_Products_NeedsReview\" ON \"Products\" (\"NeedsReview\")");
-        await db.Database.ExecuteSqlRawAsync(
-            "CREATE TABLE IF NOT EXISTS \"ProductSyncRuns\" (" +
-            "\"Id\" integer GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, " +
-            "\"StartedAt\" timestamp with time zone NOT NULL, " +
-            "\"FinishedAt\" timestamp with time zone NULL, " +
-            "\"Status\" character varying(16) NOT NULL, " +
-            "\"Trigger\" character varying(16) NOT NULL, " +
-            "\"Fetched\" integer NOT NULL, \"Created\" integer NOT NULL, \"Updated\" integer NOT NULL, " +
-            "\"Unchanged\" integer NOT NULL, \"Skipped\" integer NOT NULL, \"NotInFeed\" integer NOT NULL, " +
-            "\"Error\" text NULL, \"Warnings\" text NULL)");
-        await db.Database.ExecuteSqlRawAsync("CREATE INDEX IF NOT EXISTS \"IX_ProductSyncRuns_StartedAt\" ON \"ProductSyncRuns\" (\"StartedAt\")");
-    }
 
     private static async Task EnableTrigramAsync(AppDbContext db, ILogger log)
     {

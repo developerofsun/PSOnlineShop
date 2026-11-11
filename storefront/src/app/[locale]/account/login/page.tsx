@@ -7,7 +7,7 @@ export default async function LoginPage({ params }: { params: Promise<{ locale: 
   const t = await getTranslations({ locale, namespace: 'auth' });
   return (
     <div className="space-y-4">
-      <h1 className="text-center text-2xl font-bold">{t('title')}</h1>
+      <h1 className="text-center font-display text-3xl text-brand-800">{t('title')}</h1>
       <AuthForm />
     </div>
   );

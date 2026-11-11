@@ -51,7 +51,7 @@ export default function OrderView({ number, status }: { number: string; status?:
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
-      <h1 className="text-2xl font-bold">
+      <h1 className="font-display text-3xl text-brand-800">
         {t('title')} <span dir="ltr">{number}</span>
       </h1>
 

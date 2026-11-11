@@ -21,11 +21,11 @@ export default function Price({
     <span className="inline-flex flex-col leading-tight">
       {onSale && (
         <span className="flex items-center gap-1.5">
-          <span className="rounded bg-red-600 px-1.5 py-0.5 text-[11px] font-bold text-white">{formatNumber(percent, locale)}٪</span>
+          <span className="rounded-sm bg-accent-500 px-1.5 py-0.5 text-[11px] font-bold text-slate-900">{formatNumber(percent, locale)}٪</span>
           <span className="text-xs text-slate-400 line-through">{formatNumber(price, locale)}</span>
         </span>
       )}
-      <span className={`font-bold text-slate-900 ${size === 'lg' ? 'text-xl' : 'text-[15px]'}`}>
+      <span className={`font-bold ${onSale ? 'text-sale' : 'text-slate-900'} ${size === 'lg' ? 'text-2xl' : 'text-[15px]'}`}>
         {formatNumber(current, locale)} <span className="text-xs font-normal text-slate-500">{t('currency')}</span>
       </span>
     </span>

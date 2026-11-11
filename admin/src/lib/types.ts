@@ -180,6 +180,42 @@ export type SliderDetail = { id: number; name: string; isActive: boolean; slides
 export type BannerRow = { id: number; name: string; imageUrl: string; linkUrl: string | null; title: L10n; isActive: boolean };
 export type TextRow = { id: number; name: string; key: string; content: L10n; isActive: boolean };
 
+// ---------- footer designer ----------
+export type FooterElementType = 'heading' | 'text' | 'links' | 'contact' | 'logo' | 'newsletter' | 'socials' | 'image';
+export type FooterSize = 'sm' | 'md' | 'lg' | 'xl';
+export type FooterAlign = 'start' | 'center' | 'end';
+export type FooterLinkItem = { text: L10n; link: string | null };
+export type FooterContactItem = { icon: string; text: L10n; link: string | null };
+export type FooterElement = {
+  type: FooterElementType;
+  /** Only the keys that belong to `type` are kept when saved. */
+  config: {
+    text?: L10n;
+    items?: FooterLinkItem[] | FooterContactItem[];
+    logo?: boolean;
+    textOn?: boolean;
+    imageUrl?: string;
+    size?: FooterSize;
+    align?: FooterAlign | null;
+  };
+};
+export type FooterColumn = { width: number; elements: FooterElement[] };
+export type FooterSocial = { network: string; url: string };
+export type FooterLayout = {
+  id?: number;
+  isActive: boolean;
+  theme: 'dark' | 'custom';
+  headingColor: string | null;
+  linkColor: string | null;
+  background: L10n;
+  textColor: L10n;
+  mutedColor: L10n;
+  copyright: L10n;
+  pageSlug: L10n;
+  columns: FooterColumn[];
+  socials: FooterSocial[];
+};
+
 export type PageRow = {
   id: number;
   title: string | null;

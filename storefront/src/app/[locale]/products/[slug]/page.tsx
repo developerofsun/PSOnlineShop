@@ -59,11 +59,11 @@ export default async function ProductPage({ params }: Props) {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c') }} />
 
       <div className="space-y-3">
-        <ProductImage src={p.images[0] ?? null} alt={p.name} className="aspect-square w-full rounded-md border border-slate-200 bg-white" />
+        <ProductImage src={p.images[0] ?? null} alt={p.name} className="aspect-square w-full rounded-2xl bg-slate-100" />
         {p.images.length > 1 && (
           <div className="grid grid-cols-5 gap-2">
             {p.images.slice(1, 6).map((src) => (
-              <ProductImage key={src} src={src} alt={p.name} className="aspect-square w-full rounded border border-slate-200 bg-white" />
+              <ProductImage key={src} src={src} alt={p.name} className="aspect-square w-full rounded-lg bg-slate-100" />
             ))}
           </div>
         )}
@@ -78,12 +78,15 @@ export default async function ProductPage({ params }: Props) {
             {p.category.name}
           </Link>
         )}
-        <h1 className="text-2xl font-bold">{p.name}</h1>
+        <h1 className="font-display text-3xl leading-snug text-slate-900">{p.name}</h1>
         <div className="text-lg">
           <Price size="lg" price={p.price} salePrice={p.salePrice} />
         </div>
-        <p className="text-sm text-slate-500">
-          {t('sku')}: {p.sku} · {p.stock > 0 ? tc('inStock') : tc('outOfStock')}
+        <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-500">
+          <span>
+            {t('sku')}: {p.sku}
+          </span>
+          <span className={`font-semibold ${p.stock > 0 ? 'text-brand-700' : 'text-sale'}`}>{p.stock > 0 ? tc('inStock') : tc('outOfStock')}</span>
         </p>
         {p.shortDescription && <p className="text-slate-700">{p.shortDescription}</p>}
         <div className="flex flex-wrap items-center gap-3">

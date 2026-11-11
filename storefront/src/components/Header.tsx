@@ -5,6 +5,7 @@ import type { CategoryItem } from '@/lib/types';
 import CategoryNav from './CategoryNav';
 import DeliveryBar from './DeliveryBar';
 import HeaderActions from './HeaderActions';
+import { headerVars, parseHeaderStyle } from './headerStyle';
 import SearchBox from './SearchBox';
 
 /** Three tiers, like a supermarket site: delivery strip, main bar (logo, search, cart), category bar. */
@@ -21,26 +22,31 @@ export default async function Header({
   logoUrl?: string | null;
 }) {
   const locale = await getLocale();
-  const categories = (await apiGet<CategoryItem[]>(`/api/catalog/categories?lang=${locale}`, 60)) ?? [];
+  const [categories, settings] = await Promise.all([
+    apiGet<CategoryItem[]>(`/api/catalog/categories?lang=${locale}`, 60).then((c) => c ?? []),
+    apiGet<Record<string, string | null>>('/api/settings/public', 30),
+  ]);
+  const style = parseHeaderStyle(settings ?? null);
+  const searchFixed = style.searchWidth > 0;
 
   return (
-    <>
+    // Sizes and colours come from the admin (Settings → Header); the CSS variables are read in globals.css.
+    <div className="site-header" style={headerVars(style)}>
       <DeliveryBar supportText={supportText} />
       {/* Only the main bar sticks to the top while scrolling */}
-      <div className="sticky top-0 z-40 border-b border-slate-200 bg-white">
+      <div className="site-header-bar sticky top-0 z-40 border-b border-slate-200">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5">
-          <Link href="/" className="flex items-center gap-2 text-xl font-extrabold text-brand-700" aria-label={siteName}>
+          <Link href="/" className="flex items-center gap-2 font-display text-[1.7rem] leading-none text-brand-700" aria-label={siteName}>
             {logoUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={logoUrl} alt="" className="h-10 w-auto max-w-[150px] object-contain" />
-            ) : (
-              <span className="grid h-9 w-9 place-items-center rounded-md bg-brand-600 text-lg text-white" aria-hidden>
-                {siteName.trim().charAt(0)}
-              </span>
-            )}
-            <span className={logoUrl ? 'hidden lg:inline' : 'hidden sm:inline'}>{siteName}</span>
+              <img src={logoUrl} alt="" className="site-header-logo-img w-auto max-w-[200px] object-contain" />
+            ) : null}
+            <span className={logoUrl ? 'hidden lg:inline' : ''}>{siteName}</span>
           </Link>
-          <div className="order-last flex w-full md:order-none md:w-auto md:flex-1">
+          <div
+            className={`site-header-search hidden md:flex ${searchFixed ? '' : 'md:flex-1'}`}
+            data-hdr-search={searchFixed ? 'fixed' : 'flex'}
+          >
             <SearchBox />
           </div>
           <div className="ms-auto md:ms-0">
@@ -49,6 +55,6 @@ export default async function Header({
         </div>
       </div>
       <CategoryNav categories={categories} shop3d={shop3d} />
-    </>
+    </div>
   );
 }

@@ -9,5 +9,10 @@ out/
 *.user
 .env
 .env.local
+.env.prod
 api/src/OnShop.Api/uploads/
 *.log
+*.zip
+
+# Production deployment secrets and certificates
+deploy/certs/

@@ -590,11 +590,11 @@ export default function Shop3D({
       w.position.set((sx * W) / 2, WALL_H / 2, 0);
       scene.add(w);
     }
-    const base = new THREE.Mesh(new THREE.BoxGeometry(W, 0.12, 0.04), mat(0x2e8b3d)); // green skirting on the back wall
+    const base = new THREE.Mesh(new THREE.BoxGeometry(W, 0.12, 0.04), mat(0x28a745)); // green skirting on the back wall
     base.position.set(0, 0.06, -D / 2 + 0.02);
     scene.add(base);
 
-    const storeSign = new THREE.Mesh(new THREE.PlaneGeometry(6, 1.3), new THREE.MeshBasicMaterial({ map: makeSign(storeName, '#2e8b3d', 768, 166, 78, logoUrl) }));
+    const storeSign = new THREE.Mesh(new THREE.PlaneGeometry(6, 1.3), new THREE.MeshBasicMaterial({ map: makeSign(storeName, '#28a745', 768, 166, 78, logoUrl) }));
     storeSign.position.set(0, 2.5, -D / 2 + 0.03);
     scene.add(storeSign);
 
@@ -652,7 +652,7 @@ export default function Shop3D({
       }
 
       // hanging aisle sign, readable from the entrance and from the back corridor
-      const signTex = makeSign(aisle.name, '#2e8b3d');
+      const signTex = makeSign(aisle.name, '#28a745');
       for (const dir of [1, -1]) {
         const s = new THREE.Mesh(new THREE.PlaneGeometry(2.1, 0.52), new THREE.MeshBasicMaterial({ map: signTex }));
         s.position.set(0, WALL_H - 0.75, dir * 0.04);
@@ -691,7 +691,7 @@ export default function Shop3D({
     // checkout counter near the entrance (click it: the trolley drives there and the checkout opens)
     const counter = new THREE.Group();
     counter.position.set(lay.counterC.x, 0, lay.counterC.z);
-    const desk = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.95, 0.9), mat(0x2e8b3d));
+    const desk = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.95, 0.9), mat(0x28a745));
     desk.position.y = 0.475;
     counter.add(desk);
     const deskTop = new THREE.Mesh(new THREE.BoxGeometry(2.7, 0.06, 1.0), mat(0xf1efe7));
@@ -1028,7 +1028,7 @@ export default function Shop3D({
       ctx.fillRect(X(-W / 2), Z(-D / 2), W * s, D * s);
       ctx.strokeStyle = '#94a3b8';
       ctx.strokeRect(X(-W / 2), Z(-D / 2), W * s, D * s);
-      ctx.fillStyle = '#2e8b3d';
+      ctx.fillStyle = '#28a745';
       for (const g of lay.gondolas) ctx.fillRect(X(g.minX), Z(g.minZ), (g.maxX - g.minX) * s, (g.maxZ - g.minZ) * s);
       ctx.fillStyle = '#e08600';
       ctx.fillRect(X(lay.counter.minX), Z(lay.counter.minZ), (lay.counter.maxX - lay.counter.minX) * s, (lay.counter.maxZ - lay.counter.minZ) * s);

@@ -13,7 +13,17 @@ type Row =
   | { kind: 'category'; href: string; label: string };
 
 /** Search-as-you-type: products and categories appear while typing (debounced, cancellable). */
-export default function SearchBox() {
+export default function SearchBox({
+  autoFocus = false,
+  inline = false,
+  onDone,
+}: {
+  autoFocus?: boolean;
+  /** Results flow under the input instead of floating over the page (used inside the mobile search dialog). */
+  inline?: boolean;
+  /** Called after the customer picks a result or submits, so a dialog can close itself. */
+  onDone?: () => void;
+}) {
   const t = useTranslations('search');
   const tc = useTranslations('common');
   const locale = useLocale();
@@ -77,6 +87,7 @@ export default function SearchBox() {
 
   function go(href: string) {
     setOpen(false);
+    onDone?.();
     router.push(href);
   }
 
@@ -112,6 +123,7 @@ export default function SearchBox() {
             setOpen(true);
           }}
           onFocus={() => setOpen(true)}
+          autoFocus={autoFocus}
           onKeyDown={onKeyDown}
           placeholder={tc('searchPlaceholder')}
           aria-label={tc('search')}
@@ -128,7 +140,7 @@ export default function SearchBox() {
       </form>
 
       {showPanel && (
-        <div className="absolute inset-x-0 top-full z-50 mt-1 overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg">
+        <div className={inline ? 'mt-3 overflow-hidden rounded-lg border border-slate-200 bg-white' : 'absolute inset-x-0 top-full z-50 mt-1 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_12px_24px_-12px_rgba(47,45,40,.25)]'}>
           {rows.length === 0 && !busy && <p className="p-4 text-sm text-slate-500">{t('noResults')}</p>}
 
           <ul role="listbox">
@@ -136,7 +148,10 @@ export default function SearchBox() {
               <li key={r.href + i} role="option" aria-selected={i === active}>
                 <Link
                   href={r.href}
-                  onClick={() => setOpen(false)}
+                  onClick={() => {
+                    setOpen(false);
+                    onDone?.();
+                  }}
                   className={`flex items-center gap-3 px-3 py-2 text-sm ${i === active ? 'bg-brand-50' : 'hover:bg-slate-50'}`}
                 >
                   {r.kind === 'product' ? (

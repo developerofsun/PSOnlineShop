@@ -43,19 +43,19 @@ export default function StoriesBar({ groups }: { groups: StoryGroup[] }) {
 
   return (
     <>
-      <section aria-label={t('title')} className="card px-3 py-3">
+      <section aria-label={t('title')} className="py-1">
         <ul className="flex gap-4 overflow-x-auto pb-1">
           {groups.map((g, i) => {
             const isSeen = seen.includes(sig(g));
             return (
               <li key={g.id} className="shrink-0">
                 <button type="button" onClick={() => setOpen(i)} className="flex w-[72px] flex-col items-center gap-1.5">
-                  <span className={`grid h-[68px] w-[68px] place-items-center rounded-full border-[3px] p-[2px] ${isSeen ? 'border-slate-300' : 'border-accent-500'}`}>
+                  <span className={`grid h-[68px] w-[68px] place-items-center rounded-full border-2 p-[2px] ${isSeen ? 'border-slate-300' : 'border-brand-600'}`}>
                     {g.coverUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={g.coverUrl} alt="" className="h-full w-full rounded-full object-cover" />
                     ) : (
-                      <span className={`grid h-full w-full place-items-center rounded-full text-xl font-extrabold text-white ${FLAT[i % FLAT.length]}`} aria-hidden>
+                      <span className={`grid h-full w-full place-items-center rounded-full font-display text-2xl text-white ${FLAT[i % FLAT.length]}`} aria-hidden>
                         {(g.title ?? '?').trim().charAt(0)}
                       </span>
                     )}

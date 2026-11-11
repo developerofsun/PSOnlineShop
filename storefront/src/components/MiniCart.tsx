@@ -83,7 +83,7 @@ export default function MiniCart() {
                       {formatNumber(i.price, locale)} {tc('currency')}
                     </div>
                     <div className="mt-2 flex items-center justify-between">
-                      <div className="flex items-center overflow-hidden rounded-md border border-brand-600">
+                      <div className="flex items-center overflow-hidden rounded-lg border border-brand-600">
                         <button
                           type="button"
                           className="grid h-8 w-8 place-items-center text-brand-700 hover:bg-brand-50"

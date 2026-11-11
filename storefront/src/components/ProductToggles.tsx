@@ -13,7 +13,7 @@ function useMounted() {
   return m;
 }
 
-const base = 'grid h-8 w-8 place-items-center rounded-md border transition-colors';
+const base = 'grid h-8 w-8 place-items-center rounded-full ring-1 ring-slate-900/10 transition-colors';
 
 export function FavButton({ productId, className = '' }: { productId: number; className?: string }) {
   const t = useTranslations('favorites');
@@ -29,7 +29,7 @@ export function FavButton({ productId, className = '' }: { productId: number; cl
       aria-label={active ? t('remove') : t('add')}
       title={active ? t('remove') : t('add')}
       onClick={() => toggle(productId)}
-      className={`${base} ${active ? 'border-rose-200 bg-rose-50 text-rose-600' : 'border-slate-200 bg-white text-slate-400 hover:text-rose-600'} ${className}`}
+      className={`${base} ${active ? 'bg-white text-sale' : 'bg-white/90 text-slate-500 hover:text-sale'} ${className}`}
     >
       <HeartIcon filled={active} className="h-[18px] w-[18px]" />
     </button>
@@ -56,7 +56,7 @@ export function CompareButton({ productId, className = '' }: { productId: number
           setTimeout(() => setShake(false), 500);
         }
       }}
-      className={`${base} ${active ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-200 bg-white text-slate-400 hover:text-brand-600'} ${shake ? 'animate-shake' : ''} ${className}`}
+      className={`${base} ${active ? 'bg-brand-600 text-white ring-brand-600' : 'bg-white/90 text-slate-500 hover:text-brand-600'} ${shake ? 'animate-shake' : ''} ${className}`}
     >
       <CompareIcon active={active} className="h-[18px] w-[18px]" />
     </button>

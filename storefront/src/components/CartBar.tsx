@@ -26,7 +26,7 @@ export default function CartBar() {
     <button
       type="button"
       onClick={() => setOpen(true)}
-      className="fixed inset-x-3 bottom-3 z-50 flex items-center justify-between rounded-md bg-brand-600 px-4 py-3 text-white shadow-lg md:hidden"
+      className="fixed inset-x-3 bottom-3 z-50 flex items-center justify-between rounded-xl bg-brand-700 px-4 py-3 text-white shadow-[0_8px_20px_-6px_rgba(13,51,34,.5)] md:hidden"
     >
       <span className="flex items-center gap-2 font-bold">
         <CartIcon className="h-5 w-5" />

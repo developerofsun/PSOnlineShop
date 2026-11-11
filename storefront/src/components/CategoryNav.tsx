@@ -30,22 +30,24 @@ export default function CategoryNav({ categories, shop3d = false }: { categories
   if (roots.length === 0) return null;
 
   return (
-    <nav className="border-b border-slate-200 bg-white" aria-label={t('allCategories')}>
+    <nav className="site-header-bar border-b border-slate-200" aria-label={t('allCategories')}>
       <div ref={box} className="relative mx-auto flex max-w-7xl items-stretch gap-1 px-4">
         <button
           type="button"
           aria-expanded={open}
+          aria-label={t('allCategories')}
+          title={t('allCategories')}
           onClick={() => setOpen((o) => !o)}
-          className="flex shrink-0 items-center gap-2 border-e border-slate-200 py-2.5 pe-4 text-sm font-bold text-brand-700 hover:text-brand-800"
+          className="flex shrink-0 items-center gap-2 border-e border-slate-200 py-2.5 pe-4 text-sm font-semibold text-brand-700 hover:text-brand-800"
         >
           <MenuIcon className="h-5 w-5" />
-          {t('allCategories')}
+          <span className="hidden md:inline">{t('allCategories')}</span>
         </button>
 
         <ul className="flex flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap ps-2 text-sm">
           {roots.slice(0, 10).map((c) => (
             <li key={c.id}>
-              <Link href={href(c)} className="block rounded px-3 py-2.5 text-slate-700 hover:bg-brand-50 hover:text-brand-700">
+              <Link href={href(c)} className="site-header-text block rounded-lg px-3 py-2.5 hover:bg-slate-100 hover:text-brand-700">
                 {c.name}
               </Link>
             </li>
@@ -53,18 +55,18 @@ export default function CategoryNav({ categories, shop3d = false }: { categories
         </ul>
 
         {shop3d && (
-          <Link href="/shop3d" className="flex shrink-0 items-center gap-1.5 border-s border-slate-200 ps-4 text-sm font-bold text-accent-600 hover:text-accent-500">
+          <Link href="/shop3d" aria-label={t('shop3d')} title={t('shop3d')} className="flex shrink-0 items-center gap-1.5 border-s border-slate-200 ps-4 text-sm font-semibold text-brand-700 hover:text-brand-800">
             <CubeIcon className="h-5 w-5" />
-            {t('shop3d')}
+            <span className="hidden md:inline">{t('shop3d')}</span>
           </Link>
         )}
 
         {open && (
-          <div className="absolute inset-x-4 top-full z-40 max-h-[70vh] overflow-y-auto border border-slate-200 bg-white p-4 shadow-lg">
+          <div className="absolute inset-x-4 top-full z-40 max-h-[70vh] overflow-y-auto rounded-b-xl border border-slate-200 bg-white p-5 shadow-[0_12px_24px_-12px_rgba(47,45,40,.25)]">
             <div className="grid grid-cols-2 gap-x-6 gap-y-5 md:grid-cols-3 lg:grid-cols-4">
               {roots.map((c) => (
                 <div key={c.id}>
-                  <Link href={href(c)} onClick={() => setOpen(false)} className="mb-1 flex items-center gap-1 font-bold text-brand-700 hover:underline">
+                  <Link href={href(c)} onClick={() => setOpen(false)} className="mb-1 flex items-center gap-1 font-semibold text-brand-800 hover:text-brand-600">
                     {c.name}
                     <ChevronIcon className="h-4 w-4 rtl:rotate-180" />
                   </Link>

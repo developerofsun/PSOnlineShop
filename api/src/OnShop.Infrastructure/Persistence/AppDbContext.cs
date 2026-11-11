@@ -25,6 +25,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<Page> Pages => Set<Page>();
     public DbSet<PageTranslation> PageTranslations => Set<PageTranslation>();
     public DbSet<PageBlock> PageBlocks => Set<PageBlock>();
+    public DbSet<FooterLayout> FooterLayouts => Set<FooterLayout>();
+    public DbSet<FooterColumn> FooterColumns => Set<FooterColumn>();
+    public DbSet<FooterElement> FooterElements => Set<FooterElement>();
+    public DbSet<FooterSocial> FooterSocials => Set<FooterSocial>();
     public DbSet<Address> Addresses => Set<Address>();
     public DbSet<Favorite> Favorites => Set<Favorite>();
     public DbSet<Story> Stories => Set<Story>();
@@ -61,6 +65,16 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         });
 
         b.Entity<PageBlock>(e => e.HasIndex(x => new { x.PageId, x.SortOrder }));
+
+        // The footer designer edits one shared layout; the controller always loads the lowest Id row.
+        b.Entity<FooterColumn>(e => e.HasIndex(x => new { x.FooterLayoutId, x.SortOrder }));
+        b.Entity<FooterElement>(e => e.HasIndex(x => new { x.FooterColumnId, x.SortOrder }));
+        b.Entity<FooterSocial>(e =>
+        {
+            e.HasIndex(x => new { x.FooterLayoutId, x.SortOrder });
+            e.Property(x => x.Network).HasMaxLength(24);
+            e.Property(x => x.Url).HasMaxLength(500);
+        });
 
         b.Entity<Address>(e =>
         {

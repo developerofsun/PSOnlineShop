@@ -7,8 +7,12 @@
     -webkit-text-size-adjust: 100%;
   }
   body {
-    @apply bg-[#f3f4f2] text-slate-800 antialiased;
-    font-family: 'Vazirmatn Variable', Vazirmatn, Tahoma, system-ui, sans-serif;
+    @apply bg-[#fefdfb] text-slate-800 antialiased;
+    font-family: 'Estedad Variable', 'Vazirmatn Variable', Tahoma, system-ui, sans-serif;
+  }
+  :focus-visible {
+    outline: 2px solid theme('colors.brand.600');
+    outline-offset: 2px;
   }
   @media (prefers-reduced-motion: reduce) {
     *,
@@ -20,32 +24,43 @@
   }
 }
 
+@layer utilities {
+  /* Headings, logo, hero: the same family as the body, just heavier and slightly tighter. */
+  .font-display {
+    font-weight: 800;
+    letter-spacing: -0.01em;
+  }
+}
+
 @layer components {
-  /* Flat, compact controls: thin borders, small radius, no shadows */
+  /* Controls and surfaces use different radii on purpose: small for controls, larger for pictures. */
   .btn {
-    @apply inline-flex items-center justify-center rounded-md bg-brand-600 px-4 py-2 text-sm font-bold text-white
-      transition-colors hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white
+      transition-colors hover:bg-brand-700 active:bg-brand-800 disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-outline {
-    @apply inline-flex items-center justify-center rounded-md border border-brand-600 bg-white px-4 py-2 text-sm
-      font-bold text-brand-700 transition-colors hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm
+      font-semibold text-brand-700 transition-colors hover:border-brand-600 hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-50;
   }
   .input {
-    @apply w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none
-      focus:border-brand-600 focus:ring-1 focus:ring-brand-600;
+    @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition-colors
+      placeholder:text-slate-400 focus:border-brand-600 focus:ring-2 focus:ring-brand-600/20;
   }
   .card {
-    @apply rounded-md border border-slate-200 bg-white;
+    @apply rounded-lg border border-slate-200 bg-white;
   }
   .section-title {
-    @apply flex items-end justify-between gap-3 border-b-2 border-brand-600 pb-2;
+    @apply flex items-baseline justify-between gap-3;
+  }
+  .section-title h2 {
+    @apply font-display text-[1.5rem] leading-tight text-brand-800;
   }
 
   /* Map pin (pure CSS, no image files) */
   .map-pin {
     width: 28px;
     height: 28px;
-    background: #d32f2f;
+    background: #b8321f;
     border: 3px solid #fff;
     border-radius: 50% 50% 50% 0;
     transform: rotate(-45deg);
@@ -75,7 +90,7 @@
     height: 4px;
     margin-top: -2px;
     border-radius: 9999px;
-    background: #cbd5e1;
+    background: #cfcbc2;
   }
   .dual-range input[type='range'] {
     position: absolute;
@@ -96,7 +111,7 @@
     width: 18px;
     border-radius: 9999px;
     border: 2px solid #fff;
-    background: #2e8b3d;
+    background: #28a745;
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
     cursor: pointer;
   }
@@ -106,8 +121,55 @@
     width: 16px;
     border-radius: 9999px;
     border: 2px solid #fff;
-    background: #2e8b3d;
+    background: #28a745;
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
     cursor: pointer;
+  }
+}
+
+@layer components {
+  /* Header sizes and colours chosen in the admin (Settings → Header). The variables are set on the wrapper in
+     Header.tsx; every rule falls back to the original value so nothing changes when they are absent. */
+  .site-header .site-header-bar {
+    min-height: var(--hdr-h, auto);
+    background-color: var(--hdr-bg, #ffffff);
+  }
+  /* A fixed width moves the box next to the logo; "flex" (the default) stretches it to the available space. */
+  .site-header .site-header-search {
+    flex: 1 1 0%;
+  }
+  .site-header .site-header-search:not([data-hdr-search='flex']) {
+    flex: 0 0 auto;
+    width: var(--hdr-search);
+  }
+  .site-header .site-header-logo-img {
+    height: var(--hdr-logo, 2.5rem);
+  }
+  .site-header .site-header-icon {
+    width: calc(var(--hdr-icon, 1.25rem) * 2);
+    height: calc(var(--hdr-icon, 1.25rem) * 2);
+  }
+  .site-header .site-header-icon svg {
+    width: var(--hdr-icon, 1.25rem);
+    height: var(--hdr-icon, 1.25rem);
+  }
+  .site-header .site-header-text {
+    color: var(--hdr-text, #5c584f);
+  }
+  .site-header .site-header-cart {
+    min-height: var(--hdr-cart, 2.5rem);
+    background-color: var(--hdr-accent, #28a745);
+  }
+  .site-header .site-header-cart:hover {
+    filter: brightness(0.92);
+  }
+  .site-header .site-header-chip {
+    background-color: var(--hdr-bg, #f1efea);
+    color: var(--hdr-text, #5c584f);
+  }
+  /* On a coloured header the strip above it should not stay grey. */
+  .site-header .site-header-strip {
+    background-color: color-mix(in srgb, var(--hdr-bg, #f1efea) 88%, #000 12%);
+    color: var(--hdr-text, #5c584f);
   }
 }

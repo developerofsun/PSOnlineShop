@@ -48,6 +48,92 @@ public class PublicContentController(AppDbContext db, CatalogService catalog) : 
                 .Select(i => new StoryItemDto(i.ImageUrl, Localized.Pick(i.CaptionJson, l), i.LinkUrl, i.DurationSec)).ToList())).ToList();
     }
 
+    /// <summary>The footer built in the admin's designer, resolved for one language. Null when it has never been saved.</summary>
+    [HttpGet("footer")]
+    public async Task<ActionResult<PublicFooter>> Footer([FromQuery] string? lang)
+    {
+        var l = CatalogService.Lang(lang);
+        var f = await db.FooterLayouts.AsNoTracking()
+            .Include(x => x.Columns).ThenInclude(c => c.Elements)
+            .Include(x => x.Socials)
+            .OrderBy(x => x.Id).FirstOrDefaultAsync();
+        if (f is null || !f.IsActive || f.Columns.Count == 0) return NotFound();
+
+        string? ColorOf(string json) =>
+            Localized.Parse(json).TryGetValue(l, out var c) && !string.IsNullOrWhiteSpace(c) ? c : null;
+        string? Href(string? link) => string.IsNullOrWhiteSpace(link) ? null
+            : link.StartsWith('/') ? $"/{l}{link}" : link;
+
+        var columns = new List<FooterColumnDto>();
+        foreach (var c in f.Columns.OrderBy(c => c.SortOrder))
+        {
+            var elements = new List<object>();
+            foreach (var e in c.Elements.OrderBy(x => x.SortOrder))
+            {
+                using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(e.ConfigJson) ? "{}" : e.ConfigJson);
+                var cfg = doc.RootElement;
+                switch (e.Type)
+                {
+                    case FooterElementTypes.Heading:
+                    case FooterElementTypes.Text:
+                        // heading/text store { "text": {"fa": ".."} } (blocks use "title", hence Title() elsewhere)
+                        elements.Add(new { type = e.Type, text = Localized.Pick(cfg.TryGetProperty("text", out var textNode) ? textNode.GetRawText() : null, l), size = Size(cfg) });
+                        break;
+                    case FooterElementTypes.Links:
+                        elements.Add(new
+                        {
+                            type = e.Type,
+                            items = ListOf(cfg, l).Select(i => new { text = i.text, href = Href(i.link) }).ToList(), size = Size(cfg),
+                        });
+                        break;
+                    case FooterElementTypes.Contact:
+                        elements.Add(new
+                        {
+                            type = e.Type,
+                            items = ListOf(cfg, l).Select(i => new { icon = i.icon ?? "phone", text = i.text, href = Href(i.link) }).ToList(), size = Size(cfg),
+                        });
+                        break;
+                    case FooterElementTypes.Logo:
+                        elements.Add(new
+                        {
+                            type = e.Type,
+                            logo = cfg.TryGetProperty("logo", out var lg) && lg.ValueKind == JsonValueKind.True,
+                            text = cfg.TryGetProperty("text", out var tx) && tx.ValueKind == JsonValueKind.True, size = Size(cfg), align = Str(cfg, "align"),
+                        });
+                        break;
+                    case FooterElementTypes.Image:
+                        elements.Add(new { type = e.Type, imageUrl = Str(cfg, "imageUrl"), size = Size(cfg), align = Str(cfg, "align") });
+                        break;
+                    case FooterElementTypes.Newsletter:
+                    case FooterElementTypes.Socials:
+                        elements.Add(new { type = e.Type, size = Size(cfg) });
+                        break;
+                }
+            }
+            columns.Add(new FooterColumnDto(c.Width, elements));
+        }
+
+        return new PublicFooter(
+            f.Theme, f.HeadingColor, f.LinkColor,
+            ColorOf(f.BackgroundJson), ColorOf(f.TextColorJson), ColorOf(f.MutedColorJson),
+            Localized.Pick(f.CopyrightJson, l),
+            Href(Localized.Pick(f.PageSlugJson, l) is string slug ? $"/p/{Uri.EscapeDataString(slug)}" : null),
+            columns,
+            f.Socials.OrderBy(s => s.SortOrder).Select(s => new FooterSocialDto(s.Network, s.Url)).ToList());
+    }
+
+    /// <summary>Elements saved before size presets existed have none: md is the original look.</summary>
+    private static string Size(JsonElement cfg) => Str(cfg, "size") is { } s && FooterElementTypes.Sizes.Contains(s) ? s : "md";
+
+    private static List<(string? icon, string? text, string? link)> ListOf(JsonElement cfg, string lang)
+    {
+        var list = new List<(string?, string?, string?)>();
+        if (!cfg.TryGetProperty("items", out var arr) || arr.ValueKind != JsonValueKind.Array) return list;
+        foreach (var it in arr.EnumerateArray())
+            list.Add((Str(it, "icon"), Localized.Pick(it.TryGetProperty("text", out var t) ? t.GetRawText() : null, lang), Str(it, "link")));
+        return list;
+    }
+
     [HttpGet("texts/{key}")]
     public async Task<ActionResult<PublicText>> Text(string key, [FromQuery] string? lang)
     {

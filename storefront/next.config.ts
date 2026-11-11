@@ -16,6 +16,7 @@ const csp = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
+  // Uploaded images are proxied through this origin (/uploads, /icon, /backend), so 'self' covers them.
   `img-src 'self' data: blob: ${TILE_ORIGIN}`.trim(),
   "font-src 'self'",
   "connect-src 'self'",
@@ -41,6 +42,9 @@ const devOrigins = [
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   allowedDevOrigins: devOrigins,
+
+  // The Docker image copies .next/standalone, which contains only the server files it needs.
+  output: 'standalone',
 
   // next-intl wiring WITHOUT the `next-intl/plugin` wrapper.
   // The plugin's only jobs are (1) aliasing 'next-intl/config' to the request config file and (2) exposing

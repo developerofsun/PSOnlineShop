@@ -54,12 +54,14 @@ api/         .NET 8 Web API + EF Core + PostgreSQL + Identity/JWT               
    - Admin login: `admin` / `Admin@12345` (change in `appsettings.Development.json` → `Seed`)
    - Health: http://localhost:5080/health
 
-   Optional, to use real EF migrations instead of `EnsureCreated`:
+   The schema is owned by EF migrations (`api/src/OnShop.Infrastructure/Persistence/Migrations`),
+   applied automatically on start. To change the model, add a migration:
    ```bash
    dotnet tool install --global dotnet-ef
-   dotnet ef migrations add Initial -p src/OnShop.Infrastructure -s src/OnShop.Api -o Persistence/Migrations
+   dotnet ef migrations add <Name> -p src/OnShop.Infrastructure -s src/OnShop.Api -o Persistence/Migrations
    ```
-   (After that the app runs `Migrate()` automatically.)
+   A database created by an older version of the app (tables but no `__EFMigrationsHistory`) is
+   adopted automatically: the initial migration is recorded as already applied, and existing data is kept.
 
 3. **Storefront**
    ```bash
@@ -183,18 +185,17 @@ small shop, not for heavy traffic). It is the only remote origin the storefront 
 Content-Security-Policy). To run fully local, host your own tile server, set its URL in the admin settings and set
 `MAP_TILE_ORIGIN` to its origin (see `storefront/.env.example`). The map shows OSM attribution as its license requires.
 
-## Upgrading an existing dev database (IMPORTANT)
+## Upgrading an existing database
 
-Version 2 added tables (pages, sliders, banners, texts, addresses, favorites) and a column
-(`ProductTranslations.SearchText`); version 3 added `Categories.ImageUrl`, `Orders.Lat/Lng` and `Addresses.Lat/Lng`; version 4 added the `Stories` and `StoryItems` tables.
-Without EF migrations the app cannot alter an existing database, so
-**the first run after updating needs a reset** (dev data is only the sample data, now grocery items):
+The schema is managed by EF migrations, so updating the app no longer needs a database reset:
+on start the API applies any migration it has not run yet, and existing data is kept.
 
-1. In `api/src/OnShop.Api/appsettings.Development.json` set `"Database": { "RecreateOnStart": true }`
-2. Run the API once, then set it back to `false`.
-
-The API tells you this in its error message if it detects an old schema. To avoid resets in the future,
-generate real migrations (see "Optional" above) once the schema settles.
+- **A database from an older version** (tables but no `__EFMigrationsHistory`) is adopted on first
+  start: the initial migration is recorded as already applied. If that database is missing newer
+  tables or columns, the API refuses to adopt it and says so — restore a backup or start fresh.
+- **Development reset** (sample data only): set `"Database": { "RecreateOnStart": true }` in
+  `appsettings.Development.json`, run the API once, then set it back to `false`.
+- **Changing the model**: add a migration (see step 2 above) and commit it with the change.
 
 ## Roles, users and permissions
 
@@ -249,21 +250,54 @@ page, PWA manifest + offline page + install button.
 images, SEO fields), categories, orders (status workflow), media library, settings.
 
 ## Not done yet (suggested next steps)
-1. Real payment gateway (Zarinpal/IDPay) implementing `IPaymentGateway`.
-2. OTP/SMS login and password reset for customers.
-3. Admin: coupons, menu editor, rich-text editor, product import/export, order invoices.
-4. Meilisearch for search at very large scale (a GIN trigram index on `SearchText` is the first step), Redis for caching.
-5. Web Push (service worker handlers exist; needs VAPID keys + API endpoint).
-6. Sitemap/robots, Iranian province/city data, shipping methods.
-7. Automated tests, CI, production Docker images + reverse proxy config.
-8. API rate limiting on `/api/auth/*`.
+1. OTP/SMS login and password reset for customers.
+2. Admin: coupons, menu editor, rich-text editor, product import/export, order invoices.
+3. Meilisearch for search at very large scale (a GIN trigram index on `SearchText` is the first step), Redis for caching.
+4. Web Push (service worker handlers exist; needs VAPID keys + API endpoint).
+5. Sitemap/robots, Iranian province/city data, shipping methods.
+6. Automated tests and CI.
+7. API rate limiting on `/api/auth/*`.
+
+## Deploying to a Linux server (Docker)
+
+The stack is PostgreSQL + API + storefront + admin behind one nginx reverse proxy.
+
+```bash
+cp .env.prod.example .env.prod      # fill in every value
+chmod 600 .env.prod
+mkdir -p deploy/certs               # fullchain.pem + privkey.pem for both hostnames
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+```
+
+- **Hostnames:** `PUBLIC_BASE_URL` (storefront) and `ADMIN_BASE_URL` (admin panel) must both point at
+  the server and be covered by the certificate. The admin is a separate hostname because its SPA uses
+  absolute paths and expects `/api` and `/uploads` on its own origin.
+- **Only the proxy publishes ports** (80/443). Postgres and the API are reachable only inside the
+  compose network.
+- **Migrations run on start.** The API applies pending migrations before serving traffic, so a deploy
+  never needs a manual database step. Back up first: `docker compose exec db pg_dump -U onshop onshop > backup.sql`.
+- **Uploaded media** lives in the `uploads` volume; database data in `pgdata`. Both survive redeploys.
+- **Payments:** set `PAYMENT_GATEWAY=Zarinpal` and `ZARINPAL_MERCHANT_ID`. The API refuses to start in
+  Production with the Fake gateway. Use `ZARINPAL_SANDBOX=true` to test against the sandbox first.
+- **Secrets** (`JWT_KEY`, `POSTGRES_PASSWORD`, `ADMIN_PASSWORD`) must be long random values; the API
+  refuses to start with a JWT key shorter than 32 characters.
+- **HTTPS is required** for PWA install and for the payment gateway callback.
+
+### Without Docker (systemd)
+
+```bash
+dotnet publish api/src/OnShop.Api -c Release -o /opt/onshop/api
+cd storefront && npm ci && npm run build     # then run `node .next/standalone/server.js`
+cd admin && npm ci && npm run build          # serve dist/ with nginx
+```
+
+Run the API as a systemd service with `ASPNETCORE_ENVIRONMENT=Production` and the same environment
+variables as above, and put nginx in front using `deploy/nginx.conf` as the template.
 
 ## Production notes
 - Set `Jwt__Key` (32+ chars), `ConnectionStrings__Default`, `Payment__Gateway`, `Seed__AdminPassword`,
   `Api__PublicBaseUrl`, `Storefront__BaseUrl` via environment variables. The API refuses to start with a
   missing/short JWT key or the Fake gateway in Production.
-- Serve storefront and admin behind one reverse proxy with HTTPS (needed for PWA install).
-  The admin expects `/api` and `/uploads` on its own origin (Vite proxies them in dev).
 - Store pages are rendered dynamically with cached API fetches (`revalidate: 30`) so builds don't need the API running.
 #   P S O n l i n e S h o p  
  

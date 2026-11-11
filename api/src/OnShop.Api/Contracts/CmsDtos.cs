@@ -34,6 +34,32 @@ public record StoryDetail(int Id, string Name, bool IsActive, int SortOrder, str
 public record StoryItemDto(string ImageUrl, string? Caption, string? LinkUrl, int DurationSec);
 public record StoryGroupDto(int Id, string? Title, string CoverUrl, List<StoryItemDto> Items);
 
+// ---------- Footer designer ----------
+public record FooterElementInput(string Type, JsonElement Config);
+public record FooterColumnInput(double Width, List<FooterElementInput> Elements);
+public record FooterSocialInput(string Network, string? Url);
+public record FooterInput(
+    bool IsActive, string Theme, string? HeadingColor, string? LinkColor,
+    Dictionary<string, string>? Background, Dictionary<string, string>? TextColor, Dictionary<string, string>? MutedColor,
+    Dictionary<string, string>? Copyright, Dictionary<string, string>? PageSlug,
+    List<FooterColumnInput> Columns, List<FooterSocialInput> Socials);
+public record FooterElementDetail(int Id, string Type, JsonElement Config);
+public record FooterColumnDetail(int Id, double Width, List<FooterElementDetail> Elements);
+public record FooterSocialDto(string Network, string Url);
+public record FooterDetail(
+    int Id, bool IsActive, string Theme, string? HeadingColor, string? LinkColor,
+    JsonElement Background, JsonElement TextColor, JsonElement MutedColor,
+    Dictionary<string, string> Copyright, Dictionary<string, string> PageSlug,
+    List<FooterColumnDetail> Columns, List<FooterSocialDto> Socials);
+
+/// <summary>The footer resolved for one language; null when the footer designer has not been used.</summary>
+public record FooterColumnDto(double Width, List<object> Elements);
+public record PublicFooter(
+    string Theme, string? HeadingColor, string? LinkColor,
+    string? Background, string? TextColor, string? MutedColor,
+    string? Copyright, string? PageSlug,
+    List<FooterColumnDto> Columns, List<FooterSocialDto> Socials);
+
 // ---------- Public (resolved for one language) ----------
 public record SlideDto(string ImageUrl, string? LinkUrl, string? Title, string? Subtitle, string? ButtonText);
 public record SliderData(List<SlideDto> Slides);

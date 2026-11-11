@@ -1,7 +1,8 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Alert, App, Button, Card, Form, Input, InputNumber, Switch } from 'antd';
+import { Alert, App, Button, Card, Form, Input, InputNumber, Select, Switch } from 'antd';
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
+import ColorField from '../components/ColorField';
 import ImageUpload from '../components/ImageUpload';
 import { useAuth } from '../lib/auth';
 import { toAscii } from '../lib/format';
@@ -14,6 +15,7 @@ type Values = {
   'shop.shipping_cost': number;
   'shop.low_stock_threshold': number;
   'site.logo_url': string;
+  'site.favicon_url': string;
   'site.shop3d_enabled': boolean;
   'site.shop3d_login_required': boolean;
   'site.shop3d_daily_minutes': number;
@@ -23,7 +25,26 @@ type Values = {
   'site.map_center_lat': number;
   'site.map_center_lng': number;
   'site.map_zoom': number;
+  'site.header_preset': 'brand' | 'dark' | 'light' | 'warm';
+  'site.header_height': number;
+  'site.header_logo_height': number;
+  'site.header_search_width': number;
+  'site.header_icon_size': number;
+  'site.header_cart_height': number;
+  'site.header_bg_color': string;
+  'site.header_text_color': string;
+  'site.header_accent_color': string;
 };
+
+/** Header looks offered by the preset picker; picking one also fills its three colours. */
+const HEADER_PRESETS = {
+  brand: { label: 'سفید و سبز (پیش‌فرض)', bg: '#ffffff', text: '#5c584f', accent: '#28a745' },
+  dark: { label: 'تیره', bg: '#1f1e1a', text: '#f1efea', accent: '#28a745' },
+  light: { label: 'سفید و آبی', bg: '#ffffff', text: '#1f1e1a', accent: '#1d4ed8' },
+  warm: { label: 'کرم و زعفرانی', bg: '#f8f7f4', text: '#46433b', accent: '#d99a0b' },
+} as const;
+
+type HeaderPreset = keyof typeof HEADER_PRESETS;
 
 const DEFAULT_TILE = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 
@@ -48,6 +69,7 @@ export default function SettingsPage() {
       'shop.low_stock_threshold': Number(data['shop.low_stock_threshold'] ?? 5),
       // on unless explicitly turned off (matches the storefront)
       'site.logo_url': data['site.logo_url'] ?? '',
+      'site.favicon_url': data['site.favicon_url'] ?? '',
       'site.shop3d_enabled': data['site.shop3d_enabled'] !== 'false',
       'site.shop3d_login_required': data['site.shop3d_login_required'] !== 'false',
       'site.shop3d_daily_minutes': Number(data['site.shop3d_daily_minutes'] ?? 10),
@@ -57,6 +79,15 @@ export default function SettingsPage() {
       'site.map_center_lat': Number(data['site.map_center_lat'] ?? 35.6892),
       'site.map_center_lng': Number(data['site.map_center_lng'] ?? 51.389),
       'site.map_zoom': Number(data['site.map_zoom'] ?? 12),
+      'site.header_preset': (data['site.header_preset'] as HeaderPreset) || 'brand',
+      'site.header_height': Number(data['site.header_height'] ?? 60),
+      'site.header_logo_height': Number(data['site.header_logo_height'] ?? 40),
+      'site.header_search_width': Number(data['site.header_search_width'] ?? 0),
+      'site.header_icon_size': Number(data['site.header_icon_size'] ?? 20),
+      'site.header_cart_height': Number(data['site.header_cart_height'] ?? 40),
+      'site.header_bg_color': data['site.header_bg_color'] || HEADER_PRESETS.brand.bg,
+      'site.header_text_color': data['site.header_text_color'] || HEADER_PRESETS.brand.text,
+      'site.header_accent_color': data['site.header_accent_color'] || HEADER_PRESETS.brand.accent,
     });
   }, [data, form]);
 
@@ -91,6 +122,21 @@ export default function SettingsPage() {
           >
             <ImageUpload />
           </Form.Item>
+          <Form.Item
+            name="site.favicon_url"
+            label="فاوآیکون (آیکون تب مرورگر و آیکون اپ موبایل)"
+            extra="تصویر مربعی PNG با اندازه ۵۱۲×۵۱۲ پیکسل (مثل آیکون آپ). خالی = آیکون پیش‌فرض فروشگاه. مرورگر فاوآیکون را کش می‌کند؛ با Ctrl+F5 چند دقیقه بعد تفاوت را می‌بینید."
+            rules={[
+              {
+                validator: (_, value?: string) =>
+                  !value || /\.(png|jpe?g|webp|gif)$/i.test(value)
+                    ? Promise.resolve()
+                    : Promise.reject(new Error('برای فاوآیکون یک تصویر PNG (بهتر است) یا JPG/WEBP/GIF انتخاب کنید؛ SVG و ICO پشتیبانی نمی‌شوند.')),
+              },
+            ]}
+          >
+            <ImageUpload accept="image/png,image/jpeg,image/webp,image/gif" preview="square" />
+          </Form.Item>
           <Form.Item name="site.name.fa" label="نام فروشگاه (فارسی)">
             <Input />
           </Form.Item>
@@ -103,6 +149,58 @@ export default function SettingsPage() {
           <Form.Item name="site.description.en" label="Description (English)">
             <Input.TextArea rows={2} dir="ltr" />
           </Form.Item>
+        </Card>
+
+        <Card title="هدر سایت (اندازه و ظاهر)" style={{ marginBottom: 16 }}>
+          <Form.Item
+            name="site.header_preset"
+            label="قالب رنگی"
+            extra="با انتخاب قالب، سه رنگ زیر پر می‌شوند؛ بعد از آن می‌توانید هر رنگ را جدا تغییر دهید."
+          >
+            <Select
+              options={Object.entries(HEADER_PRESETS).map(([value, p]) => ({ value, label: p.label }))}
+              onChange={(v: HeaderPreset) => {
+                const p = HEADER_PRESETS[v];
+                form.setFieldsValue({
+                  'site.header_bg_color': p.bg,
+                  'site.header_text_color': p.text,
+                  'site.header_accent_color': p.accent,
+                });
+              }}
+            />
+          </Form.Item>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
+            <Form.Item name="site.header_bg_color" label="رنگ پس‌زمینه هدر">
+              <ColorField />
+            </Form.Item>
+            <Form.Item name="site.header_text_color" label="رنگ متن و آیکون‌ها">
+              <ColorField />
+            </Form.Item>
+            <Form.Item name="site.header_accent_color" label="رنگ دکمه سبد خرید">
+              <ColorField />
+            </Form.Item>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
+            <Form.Item name="site.header_height" label="ارتفاع نوار اصلی" extra="۴۸ تا ۱۲۰ پیکسل">
+              <InputNumber min={48} max={120} precision={0} addonAfter="px" style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item name="site.header_logo_height" label="ارتفاع لوگو" extra="۲۴ تا ۹۶ پیکسل">
+              <InputNumber min={24} max={96} precision={0} addonAfter="px" style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item
+              name="site.header_search_width"
+              label="عرض کادر جستجو"
+              extra="۰ = کشیده تا فضای خالی (پیش‌فرض)"
+            >
+              <InputNumber min={0} max={900} step={20} precision={0} addonAfter="px" style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item name="site.header_icon_size" label="اندازه آیکون‌ها" extra="حساب، علاقه‌مندی، مقایسه، سبد">
+              <InputNumber min={16} max={36} precision={0} addonAfter="px" style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item name="site.header_cart_height" label="ارتفاع دکمه سبد خرید" extra="۳۲ تا ۶۴ پیکسل">
+              <InputNumber min={32} max={64} precision={0} addonAfter="px" style={{ width: '100%' }} />
+            </Form.Item>
+          </div>
         </Card>
 
         <Card title="فروشگاه" style={{ marginBottom: 16 }}>

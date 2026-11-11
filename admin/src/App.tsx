@@ -7,6 +7,7 @@ import { useAuth } from './lib/auth';
 import BannersPage from './pages/Banners';
 import CategoriesPage from './pages/Categories';
 import DashboardPage from './pages/Dashboard';
+import FooterDesignerPage from './pages/FooterDesigner';
 import LoginPage from './pages/Login';
 import MediaPage from './pages/Media';
 import OrdersPage from './pages/Orders';
@@ -82,6 +83,7 @@ export default function App() {
             <Route path="sliders" element={<Guard perm="content.manage"><SlidersPage /></Guard>} />
             <Route path="banners" element={<Guard perm="content.manage"><BannersPage /></Guard>} />
             <Route path="texts" element={<Guard perm="content.manage"><TextsPage /></Guard>} />
+            <Route path="footer" element={<Guard perm="content.manage"><FooterDesignerPage /></Guard>} />
             <Route path="media" element={<Guard perm="media.manage"><MediaPage /></Guard>} />
 
             <Route path="users" element={<Guard perm="users.manage"><UsersPage /></Guard>} />

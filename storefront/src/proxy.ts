@@ -5,5 +5,7 @@ export default createMiddleware(routing);
 
 export const config = {
   // Skip API proxies, Next internals and any file with an extension (sw.js, icons, manifest...).
-  matcher: ['/((?!backend|uploads|_next|_vercel|.*\\..*).*)'],
+  // favicon.ico is named explicitly because its route handler has no extension: the locale middleware
+  // would otherwise redirect it to /fa/favicon.ico.
+  matcher: ['/((?!backend|uploads|_next|_vercel|favicon\\.ico|.*\\..*).*)'],
 };

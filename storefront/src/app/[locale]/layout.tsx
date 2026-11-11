@@ -1,4 +1,5 @@
-import '@fontsource-variable/vazirmatn';
+import '@fontsource-variable/estedad';
+import '@fontsource-variable/vazirmatn'; // fallback for any glyph Estedad lacks
 import '../globals.css';
 import type { Metadata, Viewport } from 'next';
 import { notFound } from 'next/navigation';
@@ -7,12 +8,14 @@ import { getMessages, getTranslations, setRequestLocale } from 'next-intl/server
 import AppBootstrap from '@/components/AppBootstrap';
 import AssistantWidget from '@/components/AssistantWidget';
 import CartBar from '@/components/CartBar';
+import DesignedFooter, { type PublicFooter } from '@/components/DesignedFooter';
 import Footer from '@/components/Footer';
 import Header from '@/components/Header';
 import LocationPrompt from '@/components/LocationPrompt';
 import { MapSettingsProvider } from '@/components/MapSettings';
 import MiniCart from '@/components/MiniCart';
 import PwaRegister from '@/components/PwaRegister';
+import SearchDialog from '@/components/SearchDialog';
 import { isRtl, routing } from '@/i18n/routing';
 import { apiGet } from '@/lib/api';
 import { parseMapSettings } from '@/lib/mapSettings';
@@ -21,7 +24,7 @@ export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));
 }
 
-export const viewport: Viewport = { themeColor: '#2e8b3d', width: 'device-width', initialScale: 1 };
+export const viewport: Viewport = { themeColor: '#28a745', width: 'device-width', initialScale: 1 };
 
 export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }): Promise<Metadata> {
   const { locale } = await params;
@@ -30,7 +33,8 @@ export async function generateMetadata({ params }: { params: Promise<{ locale: s
     title: { default: t('siteName'), template: `%s | ${t('siteName')}` },
     applicationName: t('siteName'),
     appleWebApp: { capable: true, title: t('siteName'), statusBarStyle: 'default' },
-    icons: { icon: '/icons/icon-192.png', apple: '/icons/icon-192.png' },
+    // /favicon.ico serves the icon uploaded in the admin settings, or the bundled one (see app/favicon.ico/route.ts).
+    icons: { icon: '/favicon.ico', apple: '/favicon.ico' },
   };
 }
 
@@ -48,9 +52,10 @@ export default async function LocaleLayout({
   const t = await getTranslations({ locale, namespace: 'common' });
 
   // Managed in the admin: fixed text "footer" (Content → Texts) and site settings (name, map options).
-  const [footerText, settings] = await Promise.all([
+  const [footerText, settings, designedFooter] = await Promise.all([
     apiGet<{ text: string | null }>(`/api/content/texts/footer?lang=${locale}`, 60),
     apiGet<Record<string, string | null>>('/api/settings/public', 30),
+    apiGet<PublicFooter>(`/api/content/footer?lang=${locale}`, 30),
   ]);
   const siteName = settings?.[`site.name.${locale}`] || t('siteName');
   const mapSettings = parseMapSettings(settings);
@@ -69,8 +74,14 @@ export default async function LocaleLayout({
           <MapSettingsProvider value={mapSettings}>
             <Header siteName={siteName} supportText={footerText?.text} shop3d={shop3d} logoUrl={logoUrl} />
             <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-5">{children}</main>
-            <Footer siteName={siteName} text={footerText?.text} logoUrl={logoUrl} />
+            {/* The footer designer (admin → Content → Footer designer) takes over once it has been saved and is active. */}
+            {designedFooter ? (
+              <DesignedFooter footer={designedFooter} siteName={siteName} logoUrl={logoUrl} />
+            ) : (
+              <Footer siteName={siteName} text={footerText?.text} logoUrl={logoUrl} />
+            )}
             <MiniCart />
+            <SearchDialog />
             <CartBar />
             <LocationPrompt />
             {assistant && <AssistantWidget />}

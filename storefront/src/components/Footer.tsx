@@ -6,26 +6,24 @@ export default function Footer({ siteName, text, logoUrl = null }: { siteName: s
   const t = useTranslations('footer');
   const tc = useTranslations('common');
 
-  const col = 'space-y-2 text-sm text-slate-300';
-  const link = 'hover:text-white hover:underline';
+  const col = 'space-y-2 text-sm text-slate-600';
+  const link = 'hover:text-brand-700 hover:underline';
 
   return (
-    <footer className="mt-auto bg-slate-900 text-slate-300">
-      <div className="border-t-4 border-brand-600" />
-      <div className="mx-auto grid max-w-7xl gap-8 px-4 py-8 sm:grid-cols-2 lg:grid-cols-4">
+    <footer className="mt-12 border-t border-slate-200 bg-slate-100 text-slate-600">
+      <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:grid-cols-2 lg:grid-cols-4">
         <div className="space-y-3">
           {logoUrl ? (
-            // white backing so dark logos stay readable on the dark footer
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={logoUrl} alt={siteName} className="h-12 w-auto max-w-[180px] rounded bg-white object-contain p-1" />
+            <img src={logoUrl} alt={siteName} className="h-12 w-auto max-w-[180px] object-contain" />
           ) : (
-            <p className="text-lg font-extrabold text-white">{siteName}</p>
+            <p className="font-display text-2xl text-brand-700">{siteName}</p>
           )}
-          <p className="whitespace-pre-line text-sm leading-7">{text || t('about')}</p>
+          <p className="whitespace-pre-line text-sm leading-7 text-slate-600">{text || t('about')}</p>
         </div>
 
         <div>
-          <h3 className="mb-3 font-bold text-white">{t('shop')}</h3>
+          <h3 className="mb-3 font-semibold text-slate-900">{t('shop')}</h3>
           <ul className={col}>
             <li>
               <Link href="/products" className={link}>
@@ -46,7 +44,7 @@ export default function Footer({ siteName, text, logoUrl = null }: { siteName: s
         </div>
 
         <div>
-          <h3 className="mb-3 font-bold text-white">{t('customer')}</h3>
+          <h3 className="mb-3 font-semibold text-slate-900">{t('customer')}</h3>
           <ul className={col}>
             <li>
               <Link href="/account" className={link}>
@@ -67,15 +65,15 @@ export default function Footer({ siteName, text, logoUrl = null }: { siteName: s
         </div>
 
         <div>
-          <h3 className="mb-3 font-bold text-white">{t('why')}</h3>
+          <h3 className="mb-3 font-semibold text-slate-900">{t('why')}</h3>
           <ul className={col}>
-            <li>✓ {t('fresh')}</li>
-            <li>✓ {t('fast')}</li>
-            <li>✓ {t('secure')}</li>
+            <li>{t('fresh')}</li>
+            <li>{t('fast')}</li>
+            <li>{t('secure')}</li>
           </ul>
         </div>
       </div>
-      <div className="border-t border-white/10 py-3 text-center text-xs text-slate-400">
+      <div className="border-t border-slate-200 py-4 text-center text-xs text-slate-500">
         © {siteName} — {tc('footer')}
       </div>
     </footer>

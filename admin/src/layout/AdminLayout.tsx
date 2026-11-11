@@ -84,6 +84,7 @@ export default function AdminLayout() {
               { key: '/sliders', label: <Link to="/sliders">اسلایدرها</Link> },
               { key: '/banners', label: <Link to="/banners">بنرها</Link> },
               { key: '/texts', label: <Link to="/texts">متن‌های ثابت</Link> },
+              { key: '/footer', label: <Link to="/footer">طراحی پاورقی</Link> },
             ],
           }
         : null,

@@ -67,7 +67,7 @@ export default function AssistantWidget() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="fixed bottom-20 end-3 z-[55] flex h-12 items-center gap-2 rounded-md bg-accent-500 px-4 font-bold text-white shadow-lg hover:bg-accent-600 md:bottom-4"
+        className="fixed bottom-20 end-3 z-[55] flex h-12 items-center gap-2 rounded-full border border-slate-300 bg-white px-4 font-semibold text-brand-700 shadow-[0_4px_14px_-4px_rgba(47,45,40,.3)] hover:border-brand-600 md:bottom-4"
         aria-label={t('open')}
       >
         <ChatIcon className="h-6 w-6" />
@@ -80,9 +80,9 @@ export default function AssistantWidget() {
     <section
       role="dialog"
       aria-label={t('title')}
-      className="fixed bottom-20 end-3 z-[55] flex h-[min(70vh,560px)] w-[calc(100vw-1.5rem)] max-w-sm flex-col overflow-hidden rounded-md border border-slate-300 bg-white shadow-xl md:bottom-4"
+      className="fixed bottom-20 end-3 z-[55] flex h-[min(70vh,560px)] w-[calc(100vw-1.5rem)] max-w-sm flex-col overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-[0_16px_40px_-12px_rgba(47,45,40,.35)] md:bottom-4"
     >
-      <header className="flex items-center justify-between bg-brand-700 px-3 py-2.5 text-white">
+      <header className="flex items-center justify-between bg-brand-800 px-4 py-3 text-white">
         <div>
           <p className="font-bold">{t('title')}</p>
           <p className="text-xs text-white/80">{t('subtitle')}</p>
@@ -95,7 +95,7 @@ export default function AssistantWidget() {
       <div className="flex-1 space-y-3 overflow-y-auto bg-slate-50 p-3" aria-live="polite">
         {msgs.map((m, i) => (
           <div key={i} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
-            <div className={`max-w-[92%] space-y-2 rounded-md px-3 py-2 text-sm leading-6 ${m.role === 'user' ? 'bg-brand-600 text-white' : 'border border-slate-200 bg-white'}`}>
+            <div className={`max-w-[92%] space-y-2 rounded-2xl px-3.5 py-2 text-sm leading-6 ${m.role === 'user' ? 'bg-brand-600 text-white' : 'border border-slate-200 bg-white'}`}>
               <p className="whitespace-pre-line">{m.text}</p>
 
               {m.products && m.products.length > 0 && (
@@ -120,7 +120,7 @@ export default function AssistantWidget() {
               {m.links && m.links.length > 0 && (
                 <div className="flex flex-wrap gap-2">
                   {m.links.map((l) => (
-                    <SmartLink key={l.url} href={l.url} className="rounded border border-brand-600 px-2 py-1 text-xs font-bold text-brand-700 hover:bg-brand-50">
+                    <SmartLink key={l.url} href={l.url} className="rounded-full border border-brand-600 px-2.5 py-1 text-xs font-semibold text-brand-700 hover:bg-brand-50">
                       {l.label}
                     </SmartLink>
                   ))}

@@ -21,20 +21,20 @@ export default function DeliveryBar({ supportText }: { supportText?: string | nu
   const shown = mounted && lat != null ? label || t('locationSaved') : t('chooseAddress');
 
   return (
-    <div className="bg-brand-800 text-xs text-white">
+    <div className="site-header-strip text-xs">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-1.5">
         {map.enabled ? (
-          <button type="button" onClick={() => setLocationOpen(true)} className="flex min-w-0 items-center gap-1.5 hover:underline">
-            <PinIcon className="h-4 w-4 shrink-0" />
+          <button type="button" onClick={() => setLocationOpen(true)} className="flex min-w-0 items-center gap-1.5 hover:text-brand-700">
+            <PinIcon className="h-4 w-4 shrink-0 text-brand-600" />
             <span className="shrink-0">{t('deliverTo')}:</span>
-            <b className="truncate">{shown}</b>
+            <b className="truncate font-semibold text-slate-800">{shown}</b>
           </button>
         ) : (
           <span>{t('shipAll')}</span>
         )}
         <div className="flex shrink-0 items-center gap-3">
           {supportText && <span className="hidden whitespace-nowrap md:inline">{supportText.split('\n')[0]}</span>}
-          <LocaleSwitcher className="rounded px-2 py-0.5 text-xs text-white hover:bg-white/15" />
+          <LocaleSwitcher className="rounded px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-200" />
         </div>
       </div>
     </div>

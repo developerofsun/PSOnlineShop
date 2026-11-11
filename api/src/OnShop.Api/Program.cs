@@ -64,17 +64,24 @@ builder.Services.AddAuthorization(o =>
         MediaPolicy.AnyOf.Any(k => ctx.User.HasClaim(Permissions.ClaimType, k))));
 });
 
-// Payment gateway: only the local "Fake" one exists for now. Add real gateways here.
+// Payment gateway. "Fake" is for local development only; Production must use a real one.
 var gatewayName = config["Payment:Gateway"] ?? "Fake";
-if (gatewayName == "Fake")
+switch (gatewayName)
 {
-    if (builder.Environment.IsProduction())
-        throw new InvalidOperationException("The Fake payment gateway must not be used in Production. Set Payment:Gateway.");
-    builder.Services.AddSingleton<IPaymentGateway, FakePaymentGateway>();
-}
-else
-{
-    throw new InvalidOperationException($"Unknown payment gateway '{gatewayName}'. Implement IPaymentGateway and register it here.");
+    case "Fake":
+        if (builder.Environment.IsProduction())
+            throw new InvalidOperationException("The Fake payment gateway must not be used in Production. Set Payment:Gateway.");
+        builder.Services.AddSingleton<IPaymentGateway, FakePaymentGateway>();
+        break;
+
+    case "Zarinpal":
+        if (string.IsNullOrWhiteSpace(config["Payment:Zarinpal:MerchantId"]))
+            throw new InvalidOperationException("Payment:Zarinpal:MerchantId is required when Payment:Gateway is Zarinpal.");
+        builder.Services.AddHttpClient<IPaymentGateway, ZarinpalPaymentGateway>(c => c.Timeout = TimeSpan.FromSeconds(30));
+        break;
+
+    default:
+        throw new InvalidOperationException($"Unknown payment gateway '{gatewayName}'. Implement IPaymentGateway and register it here.");
 }
 
 // Uploaded files live on local disk.

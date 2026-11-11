@@ -42,7 +42,7 @@ export default function Recommendations({ limit = 5 }: { limit?: number }) {
       {sections.map((s) => (
         <section key={s.key}>
           <div className="section-title mb-4">
-            <h2 className="text-lg font-extrabold">{t(s.key)}</h2>
+            <h2>{t(s.key)}</h2>
           </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             {s.items.map((p) => (

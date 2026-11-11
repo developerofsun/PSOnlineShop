@@ -9,7 +9,7 @@ export default async function CartPage({ params }: { params: Promise<{ locale: s
   return (
     <div className="space-y-8">
       <div className="space-y-4">
-        <h1 className="text-2xl font-bold">{t('title')}</h1>
+        <h1 className="font-display text-3xl text-brand-800">{t('title')}</h1>
         <CartView />
       </div>
       <Recommendations />

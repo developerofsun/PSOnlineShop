@@ -11,6 +11,7 @@
     "login": "Sign in / Register",
     "search": "Search",
     "searchPlaceholder": "Search products...",
+    "close": "Close",
     "language": "فارسی",
     "loading": "Loading...",
     "outOfStock": "Out of stock",
@@ -176,7 +177,7 @@
     "send": "Send",
     "thinking": "Checking...",
     "error": "Something went wrong. Please try again.",
-    "hello": "Hello! 👋 I am the shop assistant. I can find products, suggest items based on what you bought before, show deals and check your order status.",
+    "hello": "Hi, I'm the shop assistant. I can find products, suggest things based on your past orders, show current deals and check an order's status.",
     "chipDeals": "Deals",
     "chipRecommend": "Suggest for me",
     "chipOrder": "Order status",
@@ -290,10 +291,15 @@
     "shop": "Shop",
     "offers": "Offers",
     "customer": "Customers",
-    "why": "Why us?",
+    "why": "Shop with confidence",
     "fresh": "Guaranteed quality and freshness",
     "fast": "Fast delivery to your door",
-    "secure": "Secure payment"
+    "secure": "Secure payment",
+    "allRights": "All rights reserved."
+  },
+  "newsletter": {
+    "placeholder": "Your email",
+    "subscribe": "Subscribe"
   },
   "cart": {
     "title": "Shopping cart",
