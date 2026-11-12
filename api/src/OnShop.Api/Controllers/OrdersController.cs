@@ -72,6 +72,17 @@ public class OrdersController(
         order.Total = order.Subtotal + order.ShippingCost;
 
         var callback = (config["Api:PublicBaseUrl"] ?? $"{Request.Scheme}://{Request.Host}").TrimEnd('/') + "/api/payments/callback";
+
+        // Cash on delivery: no gateway round-trip. The order stays Pending and the customer goes
+        // straight to the order page, where it shows as awaiting payment on delivery.
+        if (!gateway.RequiresPayment)
+        {
+            db.Orders.Add(order);
+            await db.SaveChangesAsync(ct);
+            var storefront = (config["Storefront:BaseUrl"] ?? "http://localhost:3000").TrimEnd('/');
+            return new CheckoutResponse(order.Number, $"{storefront}/{order.Locale}/order/{order.Number}?status=pending");
+        }
+
         var pay = await gateway.RequestAsync(new PaymentRequest(order.Number, order.Total, callback, phone), ct);
         if (!pay.Success || pay.RedirectUrl is null)
         {

@@ -18,6 +18,7 @@ public class ZarinpalPaymentGateway(HttpClient http, IConfiguration config, ILog
     : IPaymentGateway
 {
     public string Name => "Zarinpal";
+    public bool RequiresPayment => true;
 
     private string MerchantId =>
         config["Payment:Zarinpal:MerchantId"]

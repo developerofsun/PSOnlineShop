@@ -339,6 +339,7 @@
     "status": "Status",
     "paidOk": "Payment succeeded. Thank you for your purchase.",
     "paidFail": "Payment failed. If you were charged, the amount will be refunded.",
+    "placedCod": "Your order was placed. You pay on delivery.",
     "enterPhone": "Enter the mobile number used for the order to view it.",
     "show": "Show",
     "notFound": "No order found with these details.",

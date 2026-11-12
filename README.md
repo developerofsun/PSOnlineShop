@@ -258,30 +258,59 @@ images, SEO fields), categories, orders (status workflow), media library, settin
 6. Automated tests and CI.
 7. API rate limiting on `/api/auth/*`.
 
-## Deploying to a Linux server (Docker)
+## Deploying to a Linux server (Docker, host nginx)
 
-The stack is PostgreSQL + API + storefront + admin behind one nginx reverse proxy.
+Works on a server that already runs nginx + SSL on the host. The host nginx is the only public
+entry point; the containers publish their ports on `127.0.0.1` only.
 
 ```bash
+git clone <your repo> /opt/onshop && cd /opt/onshop
 cp .env.prod.example .env.prod      # fill in every value
 chmod 600 .env.prod
-mkdir -p deploy/certs               # fullchain.pem + privkey.pem for both hostnames
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 ```
 
-- **Hostnames:** `PUBLIC_BASE_URL` (storefront) and `ADMIN_BASE_URL` (admin panel) must both point at
-  the server and be covered by the certificate. The admin is a separate hostname because its SPA uses
-  absolute paths and expects `/api` and `/uploads` on its own origin.
-- **Only the proxy publishes ports** (80/443). Postgres and the API are reachable only inside the
-  compose network.
+Then point the host nginx at the containers (config template in `deploy/nginx.conf`):
+
+| Public URL | Proxied to |
+|---|---|
+| `https://<storefront>/` | `127.0.0.1:3000` |
+| `https://<storefront>/api/`, `/uploads/` | `127.0.0.1:8080` |
+| `https://<admin>/` | `127.0.0.1:8081` |
+| `https://<admin>/api/`, `/uploads/` | `127.0.0.1:8080` |
+
+- **Hostnames:** `PUBLIC_BASE_URL` (storefront) and `ADMIN_BASE_URL` (admin panel). The admin needs its
+  own hostname because its SPA uses absolute paths and expects `/api` and `/uploads` on its own origin.
 - **Migrations run on start.** The API applies pending migrations before serving traffic, so a deploy
-  never needs a manual database step. Back up first: `docker compose exec db pg_dump -U onshop onshop > backup.sql`.
-- **Uploaded media** lives in the `uploads` volume; database data in `pgdata`. Both survive redeploys.
-- **Payments:** set `PAYMENT_GATEWAY=Zarinpal` and `ZARINPAL_MERCHANT_ID`. The API refuses to start in
-  Production with the Fake gateway. Use `ZARINPAL_SANDBOX=true` to test against the sandbox first.
+  never needs a manual database step. Back up first:
+  `docker compose --env-file .env.prod -f docker-compose.prod.yml exec db pg_dump -U onshop onshop > backup.sql`.
+- **Data lives in Docker volumes:** `pgdata` (database) and `uploads` (media). Both survive redeploys.
+- **Payments:** `PAYMENT_GATEWAY=Offline` (cash on delivery, orders stay Pending until an admin marks
+  them Paid) or `Zarinpal` (needs `ZARINPAL_MERCHANT_ID`). The API refuses to start in Production with
+  the Fake gateway. Use `ZARINPAL_SANDBOX=true` to test against the Zarinpal sandbox first.
 - **Secrets** (`JWT_KEY`, `POSTGRES_PASSWORD`, `ADMIN_PASSWORD`) must be long random values; the API
   refuses to start with a JWT key shorter than 32 characters.
 - **HTTPS is required** for PWA install and for the payment gateway callback.
+
+### CDN + origin TLS
+
+If a CDN terminates public SSL and reaches the origin on port 443, nginx must still serve TLS on
+443. A self-signed "origin" certificate is enough, because browsers only ever see the CDN's
+certificate:
+
+```bash
+sudo mkdir -p /etc/nginx/ssl
+sudo openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+  -keyout /etc/nginx/ssl/origin.key -out /etc/nginx/ssl/origin.crt \
+  -subj "/CN=origin" -addext "subjectAltName=DNS:ps-mart.ir,DNS:admin.ps-mart.ir"
+sudo chmod 600 /etc/nginx/ssl/origin.key
+```
+
+Set the CDN's SSL mode to **Full** (not "Full (strict)"): the origin certificate is self-signed, so
+"strict" would reject it.
+
+A native PostgreSQL already listening on `127.0.0.1:5432` does not conflict: the database container
+publishes no port and is reachable only through the compose network.
 
 ### Without Docker (systemd)
 

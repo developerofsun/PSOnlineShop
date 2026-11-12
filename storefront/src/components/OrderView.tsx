@@ -32,7 +32,7 @@ export default function OrderView({ number, status }: { number: string; status?:
   );
 
   useEffect(() => {
-    if (status === 'paid') clearCart();
+    if (status === 'paid' || status === 'pending') clearCart();
     let phone = '';
     try {
       phone = sessionStorage.getItem(LAST_PHONE_KEY) ?? '';
@@ -56,6 +56,7 @@ export default function OrderView({ number, status }: { number: string; status?:
       </h1>
 
       {status === 'paid' && <p className="rounded-lg bg-green-50 p-3 text-green-800">{t('paidOk')}</p>}
+      {status === 'pending' && <p className="rounded-lg bg-amber-50 p-3 text-amber-800">{t('placedCod')}</p>}
       {status === 'failed' && <p className="rounded-lg bg-red-50 p-3 text-red-800">{t('paidFail')}</p>}
 
       {needPhone && (

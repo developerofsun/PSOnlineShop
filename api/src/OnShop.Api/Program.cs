@@ -80,6 +80,11 @@ switch (gatewayName)
         builder.Services.AddHttpClient<IPaymentGateway, ZarinpalPaymentGateway>(c => c.Timeout = TimeSpan.FromSeconds(30));
         break;
 
+    // Cash on delivery: no online payment, orders stay Pending until an admin marks them Paid.
+    case "Offline":
+        builder.Services.AddSingleton<IPaymentGateway, OfflinePaymentGateway>();
+        break;
+
     default:
         throw new InvalidOperationException($"Unknown payment gateway '{gatewayName}'. Implement IPaymentGateway and register it here.");
 }
