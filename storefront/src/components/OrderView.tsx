@@ -7,8 +7,9 @@ import { formatDate, formatNumber, toAsciiDigits } from '@/lib/format';
 import type { OrderDetail } from '@/lib/types';
 import { LAST_PHONE_KEY } from './CheckoutForm';
 
-export default function OrderView({ number, status }: { number: string; status?: string }) {
+export default function OrderView({ number, status, testMode }: { number: string; status?: string; testMode?: boolean }) {
   const t = useTranslations('order');
+  const tTest = useTranslations('testMode');
   const tc = useTranslations('common');
   const locale = useLocale();
   const clearCart = useCart((s) => s.clear);
@@ -58,6 +59,11 @@ export default function OrderView({ number, status }: { number: string; status?:
       {status === 'paid' && <p className="rounded-lg bg-green-50 p-3 text-green-800">{t('paidOk')}</p>}
       {status === 'pending' && <p className="rounded-lg bg-amber-50 p-3 text-amber-800">{t('placedCod')}</p>}
       {status === 'failed' && <p className="rounded-lg bg-red-50 p-3 text-red-800">{t('paidFail')}</p>}
+      {testMode && (
+        <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          {tTest('paymentNotice')}
+        </p>
+      )}
 
       {needPhone && (
         <form onSubmit={onSubmit} className="card space-y-3 p-4">

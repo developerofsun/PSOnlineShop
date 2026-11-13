@@ -10,6 +10,7 @@ import DashboardPage from './pages/Dashboard';
 import FooterDesignerPage from './pages/FooterDesigner';
 import LoginPage from './pages/Login';
 import MediaPage from './pages/Media';
+import NotifyPage from './pages/Notify';
 import OrdersPage from './pages/Orders';
 import PageEditPage from './pages/PageEdit';
 import PagesPage from './pages/Pages';
@@ -89,6 +90,7 @@ export default function App() {
             <Route path="users" element={<Guard perm="users.manage"><UsersPage /></Guard>} />
             <Route path="roles" element={<Guard perm="roles.manage"><RolesPage /></Guard>} />
             <Route path="settings" element={<Guard perm="settings.manage"><SettingsPage /></Guard>} />
+            <Route path="notify" element={<Guard perm="settings.manage"><NotifyPage /></Guard>} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

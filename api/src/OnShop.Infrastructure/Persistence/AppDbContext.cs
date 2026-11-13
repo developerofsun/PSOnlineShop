@@ -35,6 +35,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
     public DbSet<StoryItem> StoryItems => Set<StoryItem>();
     public DbSet<ProductSyncRun> ProductSyncRuns => Set<ProductSyncRun>();
     public DbSet<Shop3dUsage> Shop3dUsages => Set<Shop3dUsage>();
+    public DbSet<NotifySignup> NotifySignups => Set<NotifySignup>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -140,6 +141,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
         {
             e.HasKey(s => s.Key);
             e.Property(s => s.Key).HasMaxLength(128);
+        });
+
+        b.Entity<NotifySignup>(e =>
+        {
+            // One row per phone number: a visitor who signs up twice is not a new lead.
+            e.HasIndex(s => s.Phone).IsUnique();
+            e.Property(s => s.Phone).HasMaxLength(20);
+            e.Property(s => s.Source).HasMaxLength(64);
         });
     }
 }

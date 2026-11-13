@@ -127,6 +127,9 @@ app.MapControllers();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
-await DbSeeder.InitializeAsync(app.Services, seedSampleData: app.Environment.IsDevelopment());
+// Sample data (demo catalog, content, stories) is seeded in Development, or anywhere when
+// Seed:SampleData is set. It only fills empty tables, so it never overwrites real data.
+var seedSampleData = app.Environment.IsDevelopment() || config.GetValue<bool>("Seed:SampleData");
+await DbSeeder.InitializeAsync(app.Services, seedSampleData, allowDestructiveReset: app.Environment.IsDevelopment());
 
 app.Run();

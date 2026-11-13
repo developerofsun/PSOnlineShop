@@ -3,6 +3,7 @@ import {
   DashboardOutlined,
   FileTextOutlined,
   LogoutOutlined,
+  NotificationOutlined,
   PictureOutlined,
   SafetyCertificateOutlined,
   SettingOutlined,
@@ -103,6 +104,7 @@ export default function AdminLayout() {
           }
         : null,
 
+      can('settings.manage') ? { key: '/notify', icon: <NotificationOutlined />, label: <Link to="/notify">اعلان‌ها</Link> } : null,
       can('settings.manage') ? { key: '/settings', icon: <SettingOutlined />, label: <Link to="/settings">تنظیمات</Link> } : null,
     ];
     return list.filter(Boolean) as Item[];

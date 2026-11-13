@@ -34,6 +34,9 @@ type Values = {
   'site.header_bg_color': string;
   'site.header_text_color': string;
   'site.header_accent_color': string;
+  'site.test_mode_enabled': boolean;
+  'site.test_mode_ribbon.fa': string;
+  'site.test_mode_ribbon.en': string;
 };
 
 /** Header looks offered by the preset picker; picking one also fills its three colours. */
@@ -88,6 +91,9 @@ export default function SettingsPage() {
       'site.header_bg_color': data['site.header_bg_color'] || HEADER_PRESETS.brand.bg,
       'site.header_text_color': data['site.header_text_color'] || HEADER_PRESETS.brand.text,
       'site.header_accent_color': data['site.header_accent_color'] || HEADER_PRESETS.brand.accent,
+      'site.test_mode_enabled': data['site.test_mode_enabled'] === 'true',
+      'site.test_mode_ribbon.fa': data['site.test_mode_ribbon.fa'] ?? '',
+      'site.test_mode_ribbon.en': data['site.test_mode_ribbon.en'] ?? '',
     });
   }, [data, form]);
 
@@ -276,6 +282,27 @@ export default function SettingsPage() {
               <InputNumber min={3} max={18} style={{ width: '100%' }} />
             </Form.Item>
           </div>
+        </Card>
+
+        <Card title="حالت آزمایشی (نسخه نمایشی)" style={{ marginBottom: 16 }}>
+          <Form.Item
+            name="site.test_mode_enabled"
+            label="فعال بودن حالت آزمایشی"
+            valuePropName="checked"
+            extra="با فعال بودن این گزینه: یک نوار زرد در بالای همه صفحات نمایش داده می‌شود، هنگام ورود پنجره‌ای برای گرفتن شماره موبایل باز می‌شود و در صفحه پرداخت به کاربر گفته می‌شود که خرید واقعی انجام نمی‌شود. شماره‌های ثبت‌شده در بخش «اعلان‌ها» قابل مشاهده است."
+          >
+            <Switch />
+          </Form.Item>
+          <Form.Item
+            name="site.test_mode_ribbon.fa"
+            label="متن نوار (فارسی)"
+            extra="خالی = متن پیش‌فرض «نسخه آزمایشی — خرید واقعی انجام نمی‌شود»."
+          >
+            <Input />
+          </Form.Item>
+          <Form.Item name="site.test_mode_ribbon.en" label="Ribbon text (English)" extra="Empty = default text.">
+            <Input dir="ltr" />
+          </Form.Item>
         </Card>
 
         <Button type="primary" htmlType="submit" loading={saving}>

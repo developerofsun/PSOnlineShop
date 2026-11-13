@@ -184,3 +184,17 @@ public class SiteSetting
     public string Key { get; set; } = "";
     public string? Value { get; set; }
 }
+
+/// <summary>
+/// A phone number left by a visitor who wants to be told when the shop goes live.
+/// Only collected while the site runs in test mode (see the "site.test_mode_enabled" setting).
+/// </summary>
+public class NotifySignup
+{
+    public int Id { get; set; }
+    /// <summary>Normalised to 09xxxxxxxxx by Text.NormalizePhone before saving.</summary>
+    public string Phone { get; set; } = "";
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    /// <summary>Which page the visitor was on, for context (optional).</summary>
+    public string? Source { get; set; }
+}

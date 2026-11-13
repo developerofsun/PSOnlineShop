@@ -16,6 +16,7 @@ import { MapSettingsProvider } from '@/components/MapSettings';
 import MiniCart from '@/components/MiniCart';
 import PwaRegister from '@/components/PwaRegister';
 import SearchDialog from '@/components/SearchDialog';
+import TestModeNotice from '@/components/TestModeNotice';
 import { isRtl, routing } from '@/i18n/routing';
 import { apiGet } from '@/lib/api';
 import { parseMapSettings } from '@/lib/mapSettings';
@@ -64,6 +65,10 @@ export default async function LocaleLayout({
   const assistant = settings?.['site.assistant_enabled'] !== 'false';
   const logoUrl = settings?.['site.logo_url'] || null; // chosen by the admin (Settings → Site information)
 
+  // Test/demo mode (Admin → Settings): ribbon on every page, one-time signup modal, checkout warning.
+  const testMode = settings?.['site.test_mode_enabled'] === 'true';
+  const testRibbon = settings?.[`site.test_mode_ribbon.${locale}`] || t('testRibbon');
+
   return (
     <html lang={locale} dir={isRtl(locale) ? 'rtl' : 'ltr'}>
       {/* Column layout: <main> grows, so the footer sits at the bottom even on short pages.
@@ -72,6 +77,7 @@ export default async function LocaleLayout({
       <body suppressHydrationWarning className="flex min-h-screen flex-col pb-16 md:pb-0">
         <NextIntlClientProvider messages={messages}>
           <MapSettingsProvider value={mapSettings}>
+            {testMode && <TestModeNotice ribbon={testRibbon} />}
             <Header siteName={siteName} supportText={footerText?.text} shop3d={shop3d} logoUrl={logoUrl} />
             <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-5">{children}</main>
             {/* The footer designer (admin → Content → Footer designer) takes over once it has been saved and is active. */}

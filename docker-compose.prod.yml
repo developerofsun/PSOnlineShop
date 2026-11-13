@@ -43,6 +43,9 @@ services:
       Seed__AdminUserName: ${ADMIN_USERNAME}
       Seed__AdminEmail: ${ADMIN_EMAIL}
       Seed__AdminPassword: ${ADMIN_PASSWORD}
+      # Demo catalog/content for showing the site before real data exists.
+      # Only fills empty tables, so it never overwrites real products. Set to false once done.
+      Seed__SampleData: ${SEED_SAMPLE_DATA:-false}
       Api__PublicBaseUrl: ${PUBLIC_BASE_URL}
       Storefront__BaseUrl: ${PUBLIC_BASE_URL}
       Cors__Origins__0: ${PUBLIC_BASE_URL}

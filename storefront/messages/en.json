@@ -1,6 +1,7 @@
 {
   "common": {
     "siteName": "My Market",
+    "testRibbon": "Test version — no real orders are placed",
     "currency": "Toman",
     "home": "Home",
     "products": "Products",
@@ -355,5 +356,16 @@
       "Cancelled": "Cancelled",
       "Refunded": "Refunded"
     }
+  },
+  "testMode": {
+    "title": "This site is a test version",
+    "body": "The shop is still being prepared and no real purchase takes place. Leave your phone number and we will let you know as soon as it opens.",
+    "phoneLabel": "Your mobile number",
+    "submit": "Notify me",
+    "sending": "Sending…",
+    "thanks": "Thank you! We saved your number and will let you know when the shop opens.",
+    "close": "Close",
+    "error": "Could not save your number. Please try again.",
+    "paymentNotice": "This is a test version: no real payment was taken and your order was not finalised."
   }
 }

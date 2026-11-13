@@ -288,6 +288,9 @@ Then point the host nginx at the containers (config template in `deploy/nginx.co
 - **Payments:** `PAYMENT_GATEWAY=Offline` (cash on delivery, orders stay Pending until an admin marks
   them Paid) or `Zarinpal` (needs `ZARINPAL_MERCHANT_ID`). The API refuses to start in Production with
   the Fake gateway. Use `ZARINPAL_SANDBOX=true` to test against the Zarinpal sandbox first.
+- **Demo data:** set `SEED_SAMPLE_DATA=true` to fill an empty database with the sample catalog, home
+  page and stories — useful for showing the site before real products exist. It only fills empty
+  tables, so it never overwrites real data. Set it back to `false` afterwards.
 - **Secrets** (`JWT_KEY`, `POSTGRES_PASSWORD`, `ADMIN_PASSWORD`) must be long random values; the API
   refuses to start with a JWT key shorter than 32 characters.
 - **HTTPS is required** for PWA install and for the payment gateway callback.

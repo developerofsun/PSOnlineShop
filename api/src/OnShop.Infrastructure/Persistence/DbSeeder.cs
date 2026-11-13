@@ -11,7 +11,12 @@ namespace OnShop.Infrastructure.Persistence;
 
 public static class DbSeeder
 {
-    public static async Task InitializeAsync(IServiceProvider services, bool seedSampleData)
+    /// <param name="seedSampleData">Fill the demo catalog/content on an empty database.</param>
+    /// <param name="allowDestructiveReset">
+    /// Permit Database:RecreateOnStart to drop the database. Development only: seeding demo data in
+    /// Production must never be able to wipe a real shop.
+    /// </param>
+    public static async Task InitializeAsync(IServiceProvider services, bool seedSampleData, bool allowDestructiveReset)
     {
         using var scope = services.CreateScope();
         var sp = scope.ServiceProvider;
@@ -22,9 +27,17 @@ public static class DbSeeder
         var connection = db.Database.GetDbConnection();
         log.LogInformation("Database: {Database} on {Host}", connection.Database, connection.DataSource);
 
-        // Development only (seedSampleData == Development): wipe the database and rebuild it.
+        // Development only: wipe the database and rebuild it.
         // Enable by setting "Database": { "RecreateOnStart": true } in appsettings.Development.json, run once, then remove it.
-        if (seedSampleData && config.GetValue<bool>("Database:RecreateOnStart"))
+        var recreate = config.GetValue<bool>("Database:RecreateOnStart");
+        if (recreate && !allowDestructiveReset)
+        {
+            log.LogError("Database:RecreateOnStart is ignored outside Development; refusing to drop the database.");
+            throw new InvalidOperationException(
+                "Database:RecreateOnStart is only allowed in Development. Remove it from the configuration.");
+        }
+
+        if (recreate)
         {
             log.LogWarning("Database:RecreateOnStart is true: dropping and recreating the database.");
             await db.Database.EnsureDeletedAsync();
@@ -197,6 +210,12 @@ public static class DbSeeder
             ["site.description.en"] = "Online grocery and daily essentials",
             ["shop.shipping_cost"] = "0",
             ["shop.low_stock_threshold"] = "5",
+
+            // Test/demo mode: shows the "test version" ribbon and the phone-number signup modal,
+            // and warns at checkout that no real payment is taken. Turn off from Admin → Settings.
+            ["site.test_mode_enabled"] = "true",
+            ["site.test_mode_ribbon.fa"] = "نسخه آزمایشی — خرید واقعی انجام نمی‌شود",
+            ["site.test_mode_ribbon.en"] = "Test version — no real orders are placed",
 
             // Delivery location on a map (OpenStreetMap). Public keys start with "site." so the storefront can read them.
             ["site.map_enabled"] = "true",
