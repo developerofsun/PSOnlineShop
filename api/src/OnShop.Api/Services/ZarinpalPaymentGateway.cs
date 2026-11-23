@@ -14,31 +14,31 @@ namespace OnShop.Api.Services;
 ///   Payment:Zarinpal:MerchantId = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 ///   Payment:Zarinpal:Sandbox = true   (use the sandbox host while testing)
 /// </summary>
-public class ZarinpalPaymentGateway(HttpClient http, IConfiguration config, ILogger<ZarinpalPaymentGateway> log)
-    : IPaymentGateway
+public class ZarinpalPaymentGateway(HttpClient http, ILogger<ZarinpalPaymentGateway> log) : IPaymentGateway
 {
-    public string Name => "Zarinpal";
+    public string Name => PaymentGateways.Zarinpal;
     public bool RequiresPayment => true;
 
-    private string MerchantId =>
-        config["Payment:Zarinpal:MerchantId"]
-        ?? throw new InvalidOperationException("Payment:Zarinpal:MerchantId is not configured.");
+    private static string MerchantId(PaymentSettings settings) =>
+        !string.IsNullOrWhiteSpace(settings.ZarinpalMerchantId)
+            ? settings.ZarinpalMerchantId.Trim()
+            : throw new PaymentConfigurationException(
+                "Payment:Zarinpal:MerchantId is not configured. Set it in Admin → Settings → Payments.");
 
-    private bool Sandbox => config.GetValue("Payment:Zarinpal:Sandbox", false);
-
-    private string BaseUrl => Sandbox
+    private static string BaseUrl(PaymentSettings settings) => settings.ZarinpalSandbox
         ? "https://sandbox.zarinpal.com"
         : "https://payment.zarinpal.com";
 
-    private string StartPayUrl => Sandbox
+    private static string StartPayUrl(PaymentSettings settings) => settings.ZarinpalSandbox
         ? "https://sandbox.zarinpal.com/pg/StartPay"
         : "https://payment.zarinpal.com/pg/StartPay";
 
-    public async Task<PaymentRequestResult> RequestAsync(PaymentRequest request, CancellationToken ct)
+    public async Task<PaymentRequestResult> RequestAsync(
+        PaymentRequest request, PaymentSettings settings, CancellationToken ct)
     {
         var body = new
         {
-            merchant_id = MerchantId,
+            merchant_id = MerchantId(settings),
             amount = ToRial(request.Amount),
             callback_url = request.CallbackUrl,
             description = $"پرداخت سفارش {request.OrderNumber}",
@@ -47,12 +47,12 @@ public class ZarinpalPaymentGateway(HttpClient http, IConfiguration config, ILog
 
         try
         {
-            using var res = await http.PostAsJsonAsync($"{BaseUrl}/pg/v4/payment/request.json", body, ct);
+            using var res = await http.PostAsJsonAsync($"{BaseUrl(settings)}/pg/v4/payment/request.json", body, ct);
             var payload = await res.Content.ReadFromJsonAsync<ZarinpalResponse>(ct);
 
             if (payload?.Data?.Code == 100 && !string.IsNullOrWhiteSpace(payload.Data.Authority))
                 return new PaymentRequestResult(
-                    true, payload.Data.Authority, $"{StartPayUrl}/{payload.Data.Authority}", null);
+                    true, payload.Data.Authority, $"{StartPayUrl(settings)}/{payload.Data.Authority}", null);
 
             var error = payload?.Errors?.FirstOrDefault()?.Message
                         ?? $"Zarinpal rejected the request (HTTP {(int)res.StatusCode}).";
@@ -66,7 +66,8 @@ public class ZarinpalPaymentGateway(HttpClient http, IConfiguration config, ILog
         }
     }
 
-    public async Task<PaymentVerifyResult> VerifyAsync(PaymentVerify verify, CancellationToken ct)
+    public async Task<PaymentVerifyResult> VerifyAsync(
+        PaymentVerify verify, PaymentSettings settings, CancellationToken ct)
     {
         // Zarinpal reports the outcome of the user's visit in the callback query string.
         if (!string.Equals(verify.Status, "OK", StringComparison.OrdinalIgnoreCase))
@@ -74,14 +75,14 @@ public class ZarinpalPaymentGateway(HttpClient http, IConfiguration config, ILog
 
         var body = new
         {
-            merchant_id = MerchantId,
+            merchant_id = MerchantId(settings),
             amount = ToRial(verify.Amount),
             authority = verify.Authority
         };
 
         try
         {
-            using var res = await http.PostAsJsonAsync($"{BaseUrl}/pg/v4/payment/verify.json", body, ct);
+            using var res = await http.PostAsJsonAsync($"{BaseUrl(settings)}/pg/v4/payment/verify.json", body, ct);
             var payload = await res.Content.ReadFromJsonAsync<ZarinpalResponse>(ct);
 
             // 100 = verified now, 101 = already verified (a retried callback): both mean the money is in.

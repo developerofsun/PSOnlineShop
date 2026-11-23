@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using OnShop.Api.Services;
 using OnShop.Domain;
 using OnShop.Infrastructure.Persistence;
 
@@ -19,15 +20,24 @@ public partial class SettingsController(AppDbContext db) : ControllerBase
         => await db.Settings.AsNoTracking().Where(s => s.Key.StartsWith("site."))
             .ToDictionaryAsync(s => s.Key, s => s.Value);
 
+    /// <summary>
+    /// Every site setting. Payment keys are excluded on purpose: they contain the gateway's terminal
+    /// password and are reached through /api/admin/payment, which never returns it.
+    /// </summary>
     [HttpGet("api/admin/settings"), Authorize(Policy = Permissions.SettingsManage)]
     public async Task<Dictionary<string, string?>> All()
-        => await db.Settings.AsNoTracking().ToDictionaryAsync(s => s.Key, s => s.Value);
+        => await db.Settings.AsNoTracking().Where(s => !s.Key.StartsWith("payment."))
+            .ToDictionaryAsync(s => s.Key, s => s.Value);
 
     [HttpPut("api/admin/settings"), Authorize(Policy = Permissions.SettingsManage)]
     public async Task<IActionResult> Save(Dictionary<string, string?> values)
     {
         if (values.Keys.Any(k => string.IsNullOrWhiteSpace(k) || k.Length > 128))
             return BadRequest(new { error = "کلید تنظیمات نامعتبر است." });
+
+        // Payment keys hold credentials and are validated + written only by PaymentSettingsController.
+        if (values.Keys.Any(PaymentKeys.IsReserved))
+            return BadRequest(new { error = "تنظیمات درگاه پرداخت فقط از بخش «درگاه پرداخت» ذخیره می‌شود." });
 
         // Logo: only a local upload (or empty). Minutes: a whole number 0..1440 (0 = unlimited).
         if (values.TryGetValue("site.logo_url", out var logo) && !Common.Text.IsLocalImage(logo))

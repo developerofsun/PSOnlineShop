@@ -14,8 +14,9 @@ public record PaymentVerifyResult(bool Success, string? RefId, string? Error);
 public record PaymentCallback(string? OrderNumber, string? Authority, string? Status, string? Reference = null);
 
 /// <summary>
-/// Abstraction over a payment provider. Implement one class per gateway (Zarinpal, Zibal, Mellat, ...)
-/// and register it in Program.cs based on Payment:Gateway.
+/// Abstraction over a payment provider. One class per gateway (Mellat, Zarinpal, Zibal, Offline, Fake);
+/// all of them are registered in Program.cs and <see cref="PaymentGatewayResolver"/> picks the one the
+/// admin selected, so the configuration arrives with each call instead of at startup.
 /// </summary>
 public interface IPaymentGateway
 {
@@ -27,8 +28,8 @@ public interface IPaymentGateway
     /// </summary>
     bool RequiresPayment { get; }
 
-    Task<PaymentRequestResult> RequestAsync(PaymentRequest request, CancellationToken ct);
-    Task<PaymentVerifyResult> VerifyAsync(PaymentVerify verify, CancellationToken ct);
+    Task<PaymentRequestResult> RequestAsync(PaymentRequest request, PaymentSettings settings, CancellationToken ct);
+    Task<PaymentVerifyResult> VerifyAsync(PaymentVerify verify, PaymentSettings settings, CancellationToken ct);
 
     /// <summary>
     /// Reads the provider's return request (query string, or a posted form for Mellat) into the common
@@ -52,23 +53,24 @@ public interface IPaymentGateway
     /// HTML page that forwards the browser to the provider with a POST. Null when the provider accepts
     /// a plain GET redirect; Mellat needs this (its startpay page only reads a posted RefId).
     /// </summary>
-    string? BuildRedirectPage(string authority) => null;
+    Task<string?> BuildRedirectPageAsync(string authority, PaymentSettings settings) =>
+        Task.FromResult<string?>(null);
 }
 
-/// <summary>Local development gateway: no network calls. Refused in Production (see Program.cs).</summary>
+/// <summary>Local development gateway: no network calls. Refused in Production (see PaymentGatewayResolver).</summary>
 public class FakePaymentGateway : IPaymentGateway
 {
-    public string Name => "Fake";
+    public string Name => PaymentGateways.Fake;
     public bool RequiresPayment => true;
 
-    public Task<PaymentRequestResult> RequestAsync(PaymentRequest r, CancellationToken ct)
+    public Task<PaymentRequestResult> RequestAsync(PaymentRequest r, PaymentSettings s, CancellationToken ct)
     {
         var authority = "FAKE-" + r.OrderNumber;
         var url = $"{r.CallbackUrl}?order={Uri.EscapeDataString(r.OrderNumber)}&authority={authority}&status=OK";
         return Task.FromResult(new PaymentRequestResult(true, authority, url, null));
     }
 
-    public Task<PaymentVerifyResult> VerifyAsync(PaymentVerify v, CancellationToken ct)
+    public Task<PaymentVerifyResult> VerifyAsync(PaymentVerify v, PaymentSettings s, CancellationToken ct)
     {
         var ok = v.Status == "OK" && v.Authority == "FAKE-" + v.OrderNumber;
         return Task.FromResult(ok
@@ -84,12 +86,12 @@ public class FakePaymentGateway : IPaymentGateway
 /// </summary>
 public class OfflinePaymentGateway : IPaymentGateway
 {
-    public string Name => "Offline";
+    public string Name => PaymentGateways.Offline;
     public bool RequiresPayment => false;
 
-    public Task<PaymentRequestResult> RequestAsync(PaymentRequest request, CancellationToken ct) =>
+    public Task<PaymentRequestResult> RequestAsync(PaymentRequest request, PaymentSettings s, CancellationToken ct) =>
         Task.FromResult(new PaymentRequestResult(true, null, null, null));
 
-    public Task<PaymentVerifyResult> VerifyAsync(PaymentVerify verify, CancellationToken ct) =>
+    public Task<PaymentVerifyResult> VerifyAsync(PaymentVerify verify, PaymentSettings s, CancellationToken ct) =>
         Task.FromResult(new PaymentVerifyResult(false, null, "Offline gateway never verifies payments online."));
 }

@@ -65,49 +65,26 @@ builder.Services.AddAuthorization(o =>
         MediaPolicy.AnyOf.Any(k => ctx.User.HasClaim(Permissions.ClaimType, k))));
 });
 
-// Payment gateway. "Fake" is for local development only; Production must use a real one.
-// Supported: Zarinpal, Zibal, BehpardakhtMellat (aliases Mellat / Behpardakht), Offline, Fake.
-var gatewayName = config["Payment:Gateway"] ?? "Fake";
-switch (gatewayName.Trim().ToLowerInvariant())
-{
-    case "fake":
-        if (builder.Environment.IsProduction())
-            throw new InvalidOperationException("The Fake payment gateway must not be used in Production. Set Payment:Gateway.");
-        builder.Services.AddSingleton<IPaymentGateway, FakePaymentGateway>();
-        break;
+// Payment gateways. All of them are registered; the active one is chosen per request by
+// PaymentGatewayResolver from Admin → Settings → Payments (database), falling back to Payment:Gateway
+// in configuration. That is what lets an admin switch provider without restarting the API.
+// Supported: BehpardakhtMellat (aliases Mellat / Behpardakht), Zarinpal, Zibal, Offline, Fake.
+builder.Services.AddHttpClient<MellatPaymentGateway>(c => c.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddHttpClient<ZarinpalPaymentGateway>(c => c.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddHttpClient<ZibalPaymentGateway>(c => c.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddSingleton<OfflinePaymentGateway>();
+builder.Services.AddSingleton<FakePaymentGateway>();
+builder.Services.AddScoped<PaymentSettingsStore>();
+builder.Services.AddScoped<PaymentGatewayResolver>();
 
-    case "zarinpal":
-        if (string.IsNullOrWhiteSpace(config["Payment:Zarinpal:MerchantId"]))
-            throw new InvalidOperationException("Payment:Zarinpal:MerchantId is required when Payment:Gateway is Zarinpal.");
-        builder.Services.AddHttpClient<IPaymentGateway, ZarinpalPaymentGateway>(c => c.Timeout = TimeSpan.FromSeconds(30));
-        break;
-
-    case "zibal":
-        if (string.IsNullOrWhiteSpace(config["Payment:Zibal:Merchant"]))
-            throw new InvalidOperationException("Payment:Zibal:Merchant is required when Payment:Gateway is Zibal.");
-        builder.Services.AddHttpClient<IPaymentGateway, ZibalPaymentGateway>(c => c.Timeout = TimeSpan.FromSeconds(30));
-        break;
-
-    case "behpardakhtmellat":
-    case "behpardakht":
-    case "mellat":
-        if (string.IsNullOrWhiteSpace(config["Payment:Mellat:TerminalId"])
-            || string.IsNullOrWhiteSpace(config["Payment:Mellat:UserName"])
-            || string.IsNullOrWhiteSpace(config["Payment:Mellat:UserPassword"]))
-            throw new InvalidOperationException(
-                "Payment:Mellat:TerminalId, UserName and UserPassword are required when Payment:Gateway is BehpardakhtMellat.");
-        builder.Services.AddHttpClient<IPaymentGateway, MellatPaymentGateway>(c => c.Timeout = TimeSpan.FromSeconds(30));
-        break;
-
-    // Cash on delivery: no online payment, orders stay Pending until an admin marks them Paid.
-    case "offline":
-        builder.Services.AddSingleton<IPaymentGateway, OfflinePaymentGateway>();
-        break;
-
-    default:
-        throw new InvalidOperationException(
-            $"Unknown payment gateway '{gatewayName}'. Use Zarinpal, Zibal, BehpardakhtMellat, Offline or Fake.");
-}
+// The configuration value is only the initial fallback, but an unknown name there is still a mistake
+// worth failing fast on. Missing credentials are reported when a payment is attempted, because they
+// may live in the database instead.
+var configuredGateway = PaymentGateways.Canonical(config["Payment:Gateway"] ?? PaymentGateways.Fake)
+    ?? throw new InvalidOperationException(
+        $"Unknown payment gateway '{config["Payment:Gateway"]}'. Use Zarinpal, Zibal, BehpardakhtMellat, Offline or Fake.");
+if (configuredGateway == PaymentGateways.Fake && builder.Environment.IsProduction())
+    throw new InvalidOperationException("The Fake payment gateway must not be used in Production. Set Payment:Gateway.");
 
 // Uploaded files live on local disk.
 var uploadsPath = config["Storage:UploadsPath"] ?? "uploads";

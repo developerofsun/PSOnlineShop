@@ -188,7 +188,14 @@ Content-Security-Policy). To run fully local, host your own tile server, set its
 
 ## Payment gateways
 
-`Payment:Gateway` selects one gateway for checkout (restart the API after changing it):
+The active gateway and its credentials are set in **Admin → Settings → Payments** («درگاه پرداخت») and
+stored in the database, so changing them takes effect on the next payment without restarting the API.
+Saving a gateway validates its credentials first: an incomplete Mellat/Zarinpal/Zibal setup is refused
+with the missing field named instead of breaking checkout. The terminal password is write-only — the
+admin panel only reports whether one is stored, and leaving the field blank on save keeps the current one.
+
+`Payment:Gateway` and the keys below are still read, as the fallback for a database that has no payment
+settings yet (a fresh install, or an existing deployment that never opened the admin panel):
 
 | `Payment:Gateway` | Credentials | Notes |
 |---|---|---|
@@ -197,6 +204,10 @@ Content-Security-Policy). To run fully local, host your own tile server, set its
 | `BehpardakhtMellat` (aliases `Mellat`, `Behpardakht`) | `Payment:Mellat:TerminalId`, `Payment:Mellat:UserName`, `Payment:Mellat:UserPassword` | SOAP `bpPayRequest`/`bpVerifyRequest`/`bpSettleRequest`. The bank needs the browser to POST `RefId`, so checkout redirects to `/api/payments/start/{order}`, which serves an auto-submit form. Override the endpoints with `Payment:Mellat:ServiceUrl` / `Payment:Mellat:StartPayUrl` if the bank gives you different ones. |
 | `Offline` | none | Cash on delivery; orders stay Pending until an admin marks them Paid. |
 | `Fake` | none | Development only; refused in Production. |
+
+`GET /api/admin/payment` returns the effective values (database first, configuration second) and
+`PUT /api/admin/payment` writes only the fields you send. The generic `GET/PUT /api/admin/settings`
+endpoints deliberately skip every `payment.*` key so the terminal password cannot leak through them.
 
 Amounts are stored in Toman and sent to all three gateways in Rial (×10). Every gateway verifies the
 payment on the server before the order becomes Paid, and the callback endpoint is idempotent, so a
@@ -312,6 +323,10 @@ Then point the host nginx at the containers (config template in `deploy/nginx.co
   | `Zarinpal` | `ZARINPAL_MERCHANT_ID` | Use `ZARINPAL_SANDBOX=true` to test against the sandbox first. |
   | `Zibal` | `ZIBAL_MERCHANT` | `zibal` is Zibal's public test merchant. |
   | `BehpardakhtMellat` | `MELLAT_TERMINAL_ID`, `MELLAT_USER_NAME`, `MELLAT_USER_PASSWORD` | Also accepts the aliases `Mellat` / `Behpardakht`. |
+
+  These variables only seed the initial values. Once the shop is running, the gateway and its
+  credentials can be changed in **Admin → Settings → Payments** without a redeploy — the stored values
+  override the environment.
 
   **Behpardakht Mellat:** the three credentials come from the bank's support when they enable the
   terminal — they are not your internet-banking username and password. The bank needs the browser to

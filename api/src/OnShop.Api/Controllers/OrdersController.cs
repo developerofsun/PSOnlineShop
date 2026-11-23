@@ -13,13 +13,14 @@ namespace OnShop.Api.Controllers;
 
 [ApiController, Route("api")]
 public class OrdersController(
-    AppDbContext db, IPaymentGateway gateway, IConfiguration config, ILogger<OrdersController> log) : ControllerBase
+    AppDbContext db, PaymentGatewayResolver gateways, IConfiguration config, ILogger<OrdersController> log) : ControllerBase
 {
     // ---------- Checkout (guest or logged in) ----------
     [HttpPost("orders"), AllowAnonymous]
     public async Task<ActionResult<CheckoutResponse>> Checkout(CheckoutRequest req, CancellationToken ct)
     {
         if (req.Items is null || req.Items.Count == 0) return BadRequest(new { error = "سبد خرید خالی است." });
+
         if (req.Items.Count > 100 || req.Items.Any(i => i.Quantity is < 1 or > 100))
             return BadRequest(new { error = "تعداد اقلام نامعتبر است." });
 
@@ -29,6 +30,20 @@ public class OrdersController(
             .Select(s => s.Value).FirstOrDefaultAsync(ct);
         if (paymentsOn == "false")
             return StatusCode(503, new { error = "فروش موقتاً متوقف شده است؛ پرداخت آنلاین در دسترس نیست." });
+
+        // The gateway is chosen per request (Admin → Settings → Payments), so a misconfiguration is a
+        // runtime condition rather than a startup failure: stop here with a readable message.
+        IPaymentGateway gateway;
+        PaymentSettings paymentSettings;
+        try
+        {
+            (gateway, paymentSettings) = await gateways.ResolveAsync(ct);
+        }
+        catch (PaymentConfigurationException ex)
+        {
+            log.LogError("Payment gateway is misconfigured: {Error}", ex.Message);
+            return StatusCode(503, new { error = "درگاه پرداخت پیکربندی نشده است؛ لطفاً با پشتیبانی تماس بگیرید." });
+        }
 
         var c = req.Customer;
         var phone = Text.NormalizePhone(c.Phone);
@@ -90,7 +105,8 @@ public class OrdersController(
             return new CheckoutResponse(order.Number, $"{storefront}/{order.Locale}/order/{order.Number}?status=pending");
         }
 
-        var pay = await gateway.RequestAsync(new PaymentRequest(order.Number, order.Total, callback, phone), ct);
+        var pay = await gateway.RequestAsync(
+            new PaymentRequest(order.Number, order.Total, callback, phone), paymentSettings, ct);
         if (!pay.Success || pay.RedirectUrl is null)
         {
             log.LogError("Payment request failed for {Order}: {Error}", order.Number, pay.Error);
@@ -108,6 +124,18 @@ public class OrdersController(
     public async Task<IActionResult> Callback(CancellationToken ct)
     {
         var storefront = (config["Storefront:BaseUrl"] ?? "http://localhost:3000").TrimEnd('/');
+
+        IPaymentGateway gateway;
+        PaymentSettings paymentSettings;
+        try
+        {
+            (gateway, paymentSettings) = await gateways.ResolveAsync(ct);
+        }
+        catch (PaymentConfigurationException ex)
+        {
+            log.LogError("Payment callback for a misconfigured gateway: {Error}", ex.Message);
+            return StatusCode(503, new { error = "درگاه پرداخت پیکربندی نشده است؛ لطفاً با پشتیبانی تماس بگیرید." });
+        }
 
         // Each provider returns its own parameters; the gateway normalizes them.
         var cb = await gateway.ReadCallbackAsync(Request, ct);
@@ -134,7 +162,7 @@ public class OrdersController(
         if (o.PaymentAuthority != cb.Authority) return Redirect(Back(false));
 
         var verify = await gateway.VerifyAsync(
-            new PaymentVerify(o.Number, o.Total, cb.Authority, cb.Status, cb.Reference), ct);
+            new PaymentVerify(o.Number, o.Total, cb.Authority, cb.Status, cb.Reference), paymentSettings, ct);
         if (!verify.Success) return Redirect(Back(false));
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
@@ -166,7 +194,18 @@ public class OrdersController(
         var o = await db.Orders.AsNoTracking().FirstOrDefaultAsync(x => x.Number == order, ct);
         if (o?.PaymentAuthority is null) return NotFound();
 
-        var html = gateway.BuildRedirectPage(o.PaymentAuthority);
+        string? html;
+        try
+        {
+            var (gateway, paymentSettings) = await gateways.ResolveAsync(ct);
+            html = await gateway.BuildRedirectPageAsync(o.PaymentAuthority, paymentSettings);
+        }
+        catch (PaymentConfigurationException ex)
+        {
+            log.LogError("Payment start page for a misconfigured gateway: {Error}", ex.Message);
+            return StatusCode(503, new { error = "درگاه پرداخت پیکربندی نشده است؛ لطفاً با پشتیبانی تماس بگیرید." });
+        }
+
         if (html is null) return NotFound();
         return Content(html, "text/html; charset=utf-8");
     }

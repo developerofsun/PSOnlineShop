@@ -38,7 +38,25 @@ type Values = {
   'site.test_mode_ribbon.fa': string;
   'site.test_mode_ribbon.en': string;
   'site.payment_enabled': boolean;
+  'payment.gateway': string;
+  'payment.zarinpal.merchant_id': string;
+  'payment.zarinpal.sandbox': boolean;
+  'payment.zibal.merchant': string;
+  'payment.mellat.terminal_id': string;
+  'payment.mellat.user_name': string;
+  'payment.mellat.user_password': string;
+  'payment.mellat.service_url': string;
+  'payment.mellat.start_pay_url': string;
 };
+
+/** Payment providers offered by the gateway picker (canonical names understood by the API). */
+const GATEWAYS = [
+  { value: 'BehpardakhtMellat', label: 'به‌پرداخت ملت (بانک ملت)' },
+  { value: 'Zarinpal', label: 'زرین‌پال' },
+  { value: 'Zibal', label: 'زیبال' },
+  { value: 'Offline', label: 'پرداخت در محل (بدون درگاه آنلاین)' },
+  { value: 'Fake', label: 'آزمایشی — Fake (فقط برای توسعه)' },
+];
 
 /** Header looks offered by the preset picker; picking one also fills its three colours. */
 const HEADER_PRESETS = {
@@ -61,6 +79,12 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
 
   const { data } = useQuery({ queryKey: ['settings'], queryFn: () => api.get<Record<string, string | null>>('/api/admin/settings') });
+  const { data: pay } = useQuery({
+    queryKey: ['payment-settings'],
+    queryFn: () => api.get<Record<string, string | null>>('/api/admin/payment'),
+  });
+  const [hasPassword, setHasPassword] = useState(false);
+  const gateway = Form.useWatch('payment.gateway', form) as string | undefined;
 
   useEffect(() => {
     if (!data) return;
@@ -99,15 +123,39 @@ export default function SettingsPage() {
     });
   }, [data, form]);
 
+  useEffect(() => {
+    if (!pay) return;
+    setHasPassword(pay['payment.mellat.has_password'] === 'true');
+    form.setFieldsValue({
+      'payment.gateway': pay['payment.gateway'] || 'Fake',
+      'payment.zarinpal.merchant_id': pay['payment.zarinpal.merchant_id'] ?? '',
+      'payment.zarinpal.sandbox': pay['payment.zarinpal.sandbox'] === 'true',
+      'payment.zibal.merchant': pay['payment.zibal.merchant'] ?? '',
+      'payment.mellat.terminal_id': pay['payment.mellat.terminal_id'] ?? '',
+      'payment.mellat.user_name': pay['payment.mellat.user_name'] ?? '',
+      // The stored password never comes back from the server: an empty box means "keep it".
+      'payment.mellat.user_password': '',
+      'payment.mellat.service_url': pay['payment.mellat.service_url'] ?? '',
+      'payment.mellat.start_pay_url': pay['payment.mellat.start_pay_url'] ?? '',
+    });
+  }, [pay, form]);
+
   async function onFinish(v: Values) {
     setSaving(true);
     try {
       const body: Record<string, string> = {};
-      for (const [k, val] of Object.entries(v)) body[k] = typeof val === 'boolean' ? String(val) : String(val ?? '');
+      const gatewayBody: Record<string, string> = {};
+      for (const [k, val] of Object.entries(v)) {
+        const str = typeof val === 'boolean' ? String(val) : String(val ?? '');
+        if (k.startsWith('payment.')) gatewayBody[k] = str;
+        else body[k] = str;
+      }
       body['site.map_tile_url'] = toAscii(v['site.map_tile_url'] ?? '').trim() || DEFAULT_TILE;
+      await api.put('/api/admin/payment', gatewayBody);
       await api.put('/api/admin/settings', body);
       message.success('تنظیمات ذخیره شد');
       void qc.invalidateQueries({ queryKey: ['settings'] });
+      void qc.invalidateQueries({ queryKey: ['payment-settings'] });
     } catch (e) {
       message.error(e instanceof Error ? e.message : 'خطا در ذخیره');
     } finally {
@@ -295,6 +343,109 @@ export default function SettingsPage() {
           >
             <Switch checkedChildren="فعال" unCheckedChildren="غیرفعال" />
           </Form.Item>
+        </Card>
+
+        <Card title="درگاه پرداخت" style={{ marginBottom: 16 }}>
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message="مشخصات درگاه همین‌جا ذخیره می‌شود و بلافاصله اعمال می‌شود؛ نیازی به ری‌استارت سرور نیست و این مقادیر بر فایل تنظیمات سرور اولویت دارند. رمز درگاه فقط نوشته می‌شود و دیگر نمایش داده نمی‌شود."
+          />
+          <Form.Item
+            name="payment.gateway"
+            label="درگاه پرداخت فعال"
+            extra="پرداخت سفارش‌های جدید از این درگاه انجام می‌شود. اگر مشتری در همان لحظه در حال پرداخت از درگاه قبلی باشد، بازگشت او ممکن است کامل نشود؛ پس بهتر است درگاه را در ساعات کم‌ترافیک عوض کنید و سفارش‌های «در انتظار پرداخت» را یک بار مرور کنید."
+          >
+            <Select options={GATEWAYS} />
+          </Form.Item>
+
+          <Form.Item
+            hidden={gateway !== 'BehpardakhtMellat'}
+            name="payment.mellat.terminal_id"
+            label="شماره ترمینال (Terminal ID)"
+            extra="عددی که بانک ملت همراه با فعال‌سازی درگاه اعلام می‌کند."
+          >
+            <Input dir="ltr" inputMode="numeric" />
+          </Form.Item>
+          <Form.Item
+            hidden={gateway !== 'BehpardakhtMellat'}
+            name="payment.mellat.user_name"
+            label="نام کاربری درگاه"
+            extra="نام کاربری و رمز درگاه را بانک ملت هنگام فعال‌سازی ترمینال می‌دهد؛ با نام کاربری و رمز اینترنت‌بانک یکی نیست."
+          >
+            <Input dir="ltr" autoComplete="off" />
+          </Form.Item>
+          <Form.Item
+            hidden={gateway !== 'BehpardakhtMellat'}
+            name="payment.mellat.user_password"
+            label="رمز درگاه"
+            extra={
+              hasPassword
+                ? 'رمز ذخیره شده است. برای تغییر مقدار جدید را وارد کنید؛ خالی گذاشتن این کادر رمز فعلی را حفظ می‌کند.'
+                : 'رمز ترمینال را وارد کنید.'
+            }
+          >
+            <Input.Password
+              dir="ltr"
+              autoComplete="new-password"
+              placeholder={hasPassword ? '•••••••• (ذخیره شده)' : ''}
+            />
+          </Form.Item>
+          <Form.Item
+            hidden={gateway !== 'BehpardakhtMellat'}
+            name="payment.mellat.service_url"
+            label="آدرس سرویس بانک (اختیاری)"
+            extra="خالی = آدرس پیش‌فرض بانک ملت. فقط اگر پشتیبانی بانک نشانی دیگری داده تغییر دهید."
+          >
+            <Input dir="ltr" />
+          </Form.Item>
+          <Form.Item
+            hidden={gateway !== 'BehpardakhtMellat'}
+            name="payment.mellat.start_pay_url"
+            label="آدرس صفحه پرداخت بانک (اختیاری)"
+            extra="خالی = آدرس پیش‌فرض بانک ملت."
+          >
+            <Input dir="ltr" />
+          </Form.Item>
+
+          <Form.Item
+            hidden={gateway !== 'Zarinpal'}
+            name="payment.zarinpal.merchant_id"
+            label="شناسه پذیرنده (Merchant ID)"
+            extra="۳۶ کاراکتری که از پنل زرین‌پال دریافت می‌کنید."
+          >
+            <Input dir="ltr" />
+          </Form.Item>
+          <Form.Item
+            hidden={gateway !== 'Zarinpal'}
+            name="payment.zarinpal.sandbox"
+            label="محیط تست (Sandbox)"
+            valuePropName="checked"
+            extra="برای اتصال نهایی به پول واقعی خاموش باشد."
+          >
+            <Switch checkedChildren="تست" unCheckedChildren="عملیاتی" />
+          </Form.Item>
+
+          <Form.Item
+            hidden={gateway !== 'Zibal'}
+            name="payment.zibal.merchant"
+            label="کد پذیرنده (Merchant)"
+            extra="«zibal» کد پذیرنده‌ی آزمایشی عمومی زیبال است."
+          >
+            <Input dir="ltr" />
+          </Form.Item>
+
+          <Alert
+            style={{ display: gateway === 'Offline' || gateway === 'Fake' ? undefined : 'none' }}
+            type="warning"
+            showIcon
+            message={
+              gateway === 'Offline'
+                ? 'در حالت پرداخت در محل، درگاه آنلاین استفاده نمی‌شود؛ سفارش‌ها «در انتظار پرداخت» می‌مانند تا مدیر آن‌ها را پرداخت‌شده کند.'
+                : 'درگاه آزمایشی برای توسعه است: پول واقعی جابه‌جا نمی‌شود و در محیط عملیاتی (Production) پذیرفته نمی‌شود.'
+            }
+          />
         </Card>
 
         <Card title="حالت آزمایشی (نسخه نمایشی)" style={{ marginBottom: 16 }}>

@@ -16,24 +16,25 @@ namespace OnShop.Api.Services;
 /// The callback is a GET with ?trackId=&amp;success=1&amp;status=2&amp;orderId=...; the payment is only
 /// accepted after POST /v1/verify returns result 100 (fresh) or 201 (already verified).
 /// </summary>
-public class ZibalPaymentGateway(HttpClient http, IConfiguration config, ILogger<ZibalPaymentGateway> log)
-    : IPaymentGateway
+public class ZibalPaymentGateway(HttpClient http, ILogger<ZibalPaymentGateway> log) : IPaymentGateway
 {
     private const string BaseUrl = "https://gateway.zibal.ir";
 
-    public string Name => "Zibal";
+    public string Name => PaymentGateways.Zibal;
     public bool RequiresPayment => true;
 
-    private string MerchantId =>
-        config["Payment:Zibal:Merchant"] is { Length: > 0 } m
-            ? m
-            : throw new InvalidOperationException("Payment:Zibal:Merchant is not configured.");
+    private static string MerchantId(PaymentSettings settings) =>
+        !string.IsNullOrWhiteSpace(settings.ZibalMerchant)
+            ? settings.ZibalMerchant.Trim()
+            : throw new PaymentConfigurationException(
+                "Payment:Zibal:Merchant is not configured. Set it in Admin → Settings → Payments.");
 
-    public async Task<PaymentRequestResult> RequestAsync(PaymentRequest request, CancellationToken ct)
+    public async Task<PaymentRequestResult> RequestAsync(
+        PaymentRequest request, PaymentSettings settings, CancellationToken ct)
     {
         var body = new Dictionary<string, object>
         {
-            ["merchant"] = MerchantId,
+            ["merchant"] = MerchantId(settings),
             ["amount"] = ToRial(request.Amount),
             ["callbackUrl"] = request.CallbackUrl,
             ["description"] = $"پرداخت سفارش {request.OrderNumber}",
@@ -64,7 +65,8 @@ public class ZibalPaymentGateway(HttpClient http, IConfiguration config, ILogger
         }
     }
 
-    public async Task<PaymentVerifyResult> VerifyAsync(PaymentVerify verify, CancellationToken ct)
+    public async Task<PaymentVerifyResult> VerifyAsync(
+        PaymentVerify verify, PaymentSettings settings, CancellationToken ct)
     {
         // Zibal's trackId is an integer, so send it back as one rather than as the stored string.
         if (!long.TryParse(verify.Authority, out var trackId))
@@ -73,7 +75,7 @@ public class ZibalPaymentGateway(HttpClient http, IConfiguration config, ILogger
         // success=1 in the callback only means "the payer made it back"; only verify confirms money.
         var body = new Dictionary<string, object>
         {
-            ["merchant"] = MerchantId,
+            ["merchant"] = MerchantId(settings),
             ["trackId"] = trackId
         };
 
