@@ -24,8 +24,9 @@ api/         .NET 8 Web API + EF Core + PostgreSQL + Identity/JWT               
   internet, it will show up as a CSP error instead of silently working.
 - **Services:** PostgreSQL only (Docker Compose or native). Redis/Meilisearch are deferred.
 - **Calendar/digits:** Jalali dates and Persian digits use the browser's built-in `Intl` (no libraries).
-- **Payments:** a gateway is remote by nature. It sits behind `IPaymentGateway`; today only a local
-  `FakePaymentGateway` exists (refused in Production).
+- **Payments:** a gateway is remote by nature. It sits behind `IPaymentGateway`, which has four
+  implementations: Zarinpal, Zibal, Behpardakht Mellat and Offline (cash on delivery), plus a local
+  `FakePaymentGateway` for development that is refused in Production.
 - The only internet access needed is the one-time `npm install` / `dotnet restore`. To work fully offline
   afterwards, keep `node_modules/` and `~/.nuget/packages` (or set up an offline mirror).
 
@@ -185,6 +186,23 @@ small shop, not for heavy traffic). It is the only remote origin the storefront 
 Content-Security-Policy). To run fully local, host your own tile server, set its URL in the admin settings and set
 `MAP_TILE_ORIGIN` to its origin (see `storefront/.env.example`). The map shows OSM attribution as its license requires.
 
+## Payment gateways
+
+`Payment:Gateway` selects one gateway for checkout (restart the API after changing it):
+
+| `Payment:Gateway` | Credentials | Notes |
+|---|---|---|
+| `Zarinpal` | `Payment:Zarinpal:MerchantId` (36-char merchant id) | `Payment:Zarinpal:Sandbox=true` uses the sandbox host. |
+| `Zibal` | `Payment:Zibal:Merchant` (`zibal` is Zibal's public test merchant) | Callback is a GET with `trackId`/`success`/`status`; the server always re-verifies. |
+| `BehpardakhtMellat` (aliases `Mellat`, `Behpardakht`) | `Payment:Mellat:TerminalId`, `Payment:Mellat:UserName`, `Payment:Mellat:UserPassword` | SOAP `bpPayRequest`/`bpVerifyRequest`/`bpSettleRequest`. The bank needs the browser to POST `RefId`, so checkout redirects to `/api/payments/start/{order}`, which serves an auto-submit form. Override the endpoints with `Payment:Mellat:ServiceUrl` / `Payment:Mellat:StartPayUrl` if the bank gives you different ones. |
+| `Offline` | none | Cash on delivery; orders stay Pending until an admin marks them Paid. |
+| `Fake` | none | Development only; refused in Production. |
+
+Amounts are stored in Toman and sent to all three gateways in Rial (×10). Every gateway verifies the
+payment on the server before the order becomes Paid, and the callback endpoint is idempotent, so a
+repeated callback (or a Refresh on the return page) does not book the order twice. Mellat's numeric
+`orderId` is derived from the order number (its 12 digits), so no extra column or mapping table is needed.
+
 ## Upgrading an existing database
 
 The schema is managed by EF migrations, so updating the app no longer needs a database reset:
@@ -285,9 +303,23 @@ Then point the host nginx at the containers (config template in `deploy/nginx.co
   never needs a manual database step. Back up first:
   `docker compose --env-file .env.prod -f docker-compose.prod.yml exec db pg_dump -U onshop onshop > backup.sql`.
 - **Data lives in Docker volumes:** `pgdata` (database) and `uploads` (media). Both survive redeploys.
-- **Payments:** `PAYMENT_GATEWAY=Offline` (cash on delivery, orders stay Pending until an admin marks
-  them Paid) or `Zarinpal` (needs `ZARINPAL_MERCHANT_ID`). The API refuses to start in Production with
-  the Fake gateway. Use `ZARINPAL_SANDBOX=true` to test against the Zarinpal sandbox first.
+- **Payments:** `PAYMENT_GATEWAY` selects the gateway. The API refuses to start in Production with the
+  Fake gateway, and refuses to start at all if the chosen gateway's credentials are missing.
+
+  | Value | Credentials | Notes |
+  |---|---|---|
+  | `Offline` | none | Cash on delivery; orders stay Pending until an admin marks them Paid. |
+  | `Zarinpal` | `ZARINPAL_MERCHANT_ID` | Use `ZARINPAL_SANDBOX=true` to test against the sandbox first. |
+  | `Zibal` | `ZIBAL_MERCHANT` | `zibal` is Zibal's public test merchant. |
+  | `BehpardakhtMellat` | `MELLAT_TERMINAL_ID`, `MELLAT_USER_NAME`, `MELLAT_USER_PASSWORD` | Also accepts the aliases `Mellat` / `Behpardakht`. |
+
+  **Behpardakht Mellat:** the three credentials come from the bank's support when they enable the
+  terminal — they are not your internet-banking username and password. The bank needs the browser to
+  POST `RefId` to its start page, so checkout redirects to `/api/payments/start/{order}`, which serves
+  an auto-submit form. The callback arrives as a POST; the API verifies and settles in one step, and
+  treats code `43` (already verified) as success so a retried callback does not double-book. If the
+  bank gives you different endpoints, override `Payment:Mellat:ServiceUrl` and
+  `Payment:Mellat:StartPayUrl`.
 - **Demo data:** set `SEED_SAMPLE_DATA=true` to fill an empty database with the sample catalog, home
   page and stories — useful for showing the site before real products exist. It only fills empty
   tables, so it never overwrites real data. Set it back to `false` afterwards.
@@ -331,8 +363,7 @@ variables as above, and put nginx in front using `deploy/nginx.conf` as the temp
   `Api__PublicBaseUrl`, `Storefront__BaseUrl` via environment variables. The API refuses to start with a
   missing/short JWT key or the Fake gateway in Production.
 - Store pages are rendered dynamically with cached API fetches (`revalidate: 30`) so builds don't need the API running.
-#   P S O n l i n e S h o p  
- 
+
 ## Product sync from Kyan (accounting system)
 The API pulls products from the Kyan relation manager (`GET {Kyan:BaseUrl}/products`, `X-Api-Key` header) on a schedule
 and on demand (admin → Products → Kyan sync).

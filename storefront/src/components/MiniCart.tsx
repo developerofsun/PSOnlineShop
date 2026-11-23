@@ -7,6 +7,7 @@ import { useCart } from '@/lib/cart';
 import { formatNumber } from '@/lib/format';
 import { useUi } from '@/lib/ui';
 import { CloseIcon, MinusIcon, PlusIcon, TrashIcon } from './icons';
+import { usePaymentEnabled } from './PaymentSettings';
 import ProductImage from './ProductImage';
 
 /** Slide-in cart: review quantities and go to checkout without leaving the page. Opened from the header cart button. */
@@ -17,6 +18,7 @@ export default function MiniCart() {
   const open = useUi((s) => s.cartOpen);
   const setOpen = useUi((s) => s.setCartOpen);
   const { items, setQty, remove } = useCart();
+  const paymentEnabled = usePaymentEnabled();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
@@ -116,10 +118,17 @@ export default function MiniCart() {
                 <Link href="/cart" className="btn-outline" onClick={() => setOpen(false)}>
                   {t('viewCart')}
                 </Link>
-                <Link href="/checkout" className="btn" onClick={() => setOpen(false)}>
-                  {t('checkout')}
-                </Link>
+                {paymentEnabled ? (
+                  <Link href="/checkout" className="btn" onClick={() => setOpen(false)}>
+                    {t('checkout')}
+                  </Link>
+                ) : (
+                  <span className="btn cursor-not-allowed opacity-50" aria-disabled="true">
+                    {t('checkout')}
+                  </span>
+                )}
               </div>
+              {!paymentEnabled && <p className="text-xs text-amber-700">{t('salesPaused')}</p>}
             </div>
           </>
         )}

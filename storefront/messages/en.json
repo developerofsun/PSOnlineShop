@@ -314,7 +314,8 @@
     "checkout": "Checkout",
     "viewCart": "View cart",
     "close": "Close",
-    "note": "Shipping is calculated in the next step."
+    "note": "Shipping is calculated in the next step.",
+    "salesPaused": "Sales are paused right now."
   },
   "checkout": {
     "title": "Checkout",
@@ -332,7 +333,10 @@
     "locationSet": "Delivery point on the map is saved.",
     "locationMissing": "Pin your delivery point on the map so the courier can find you easily.",
     "changeLocation": "Change",
-    "pickLocation": "Pick on map"
+    "pickLocation": "Pick on map",
+    "pausedTitle": "Sales are paused",
+    "paused": "Online ordering and payment are unavailable right now. Please check back soon — we'll have it up again as soon as we can.",
+    "backToProducts": "Back to products"
   },
   "order": {
     "title": "Order",

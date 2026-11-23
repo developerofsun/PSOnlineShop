@@ -13,6 +13,7 @@ import Footer from '@/components/Footer';
 import Header from '@/components/Header';
 import LocationPrompt from '@/components/LocationPrompt';
 import { MapSettingsProvider } from '@/components/MapSettings';
+import { PaymentSettingsProvider } from '@/components/PaymentSettings';
 import MiniCart from '@/components/MiniCart';
 import PwaRegister from '@/components/PwaRegister';
 import SearchDialog from '@/components/SearchDialog';
@@ -69,6 +70,9 @@ export default async function LocaleLayout({
   const testMode = settings?.['site.test_mode_enabled'] === 'true';
   const testRibbon = settings?.[`site.test_mode_ribbon.${locale}`] || t('testRibbon');
 
+  // Payments on/off (Admin → Settings → Payments). When off, checkout is paused everywhere.
+  const paymentEnabled = settings?.['site.payment_enabled'] !== 'false';
+
   return (
     <html lang={locale} dir={isRtl(locale) ? 'rtl' : 'ltr'}>
       {/* Column layout: <main> grows, so the footer sits at the bottom even on short pages.
@@ -76,24 +80,26 @@ export default async function LocaleLayout({
       {/* suppressHydrationWarning: browser extensions (ColorZilla, Grammarly...) inject attributes into <body> */}
       <body suppressHydrationWarning className="flex min-h-screen flex-col pb-16 md:pb-0">
         <NextIntlClientProvider messages={messages}>
-          <MapSettingsProvider value={mapSettings}>
-            {testMode && <TestModeNotice ribbon={testRibbon} />}
-            <Header siteName={siteName} supportText={footerText?.text} shop3d={shop3d} logoUrl={logoUrl} />
-            <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-5">{children}</main>
-            {/* The footer designer (admin → Content → Footer designer) takes over once it has been saved and is active. */}
-            {designedFooter ? (
-              <DesignedFooter footer={designedFooter} siteName={siteName} logoUrl={logoUrl} />
-            ) : (
-              <Footer siteName={siteName} text={footerText?.text} logoUrl={logoUrl} />
-            )}
-            <MiniCart />
-            <SearchDialog />
-            <CartBar />
-            <LocationPrompt />
-            {assistant && <AssistantWidget />}
-            <PwaRegister />
-            <AppBootstrap />
-          </MapSettingsProvider>
+          <PaymentSettingsProvider enabled={paymentEnabled}>
+            <MapSettingsProvider value={mapSettings}>
+              {testMode && <TestModeNotice ribbon={testRibbon} />}
+              <Header siteName={siteName} supportText={footerText?.text} shop3d={shop3d} logoUrl={logoUrl} />
+              <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-5">{children}</main>
+              {/* The footer designer (admin → Content → Footer designer) takes over once it has been saved and is active. */}
+              {designedFooter ? (
+                <DesignedFooter footer={designedFooter} siteName={siteName} logoUrl={logoUrl} />
+              ) : (
+                <Footer siteName={siteName} text={footerText?.text} logoUrl={logoUrl} />
+              )}
+              <MiniCart />
+              <SearchDialog />
+              <CartBar />
+              <LocationPrompt />
+              {assistant && <AssistantWidget />}
+              <PwaRegister />
+              <AppBootstrap />
+            </MapSettingsProvider>
+          </PaymentSettingsProvider>
         </NextIntlClientProvider>
       </body>
     </html>

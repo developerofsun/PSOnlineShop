@@ -53,6 +53,10 @@ services:
       Payment__Gateway: ${PAYMENT_GATEWAY}
       Payment__Zarinpal__MerchantId: ${ZARINPAL_MERCHANT_ID:-}
       Payment__Zarinpal__Sandbox: ${ZARINPAL_SANDBOX:-false}
+      Payment__Zibal__Merchant: ${ZIBAL_MERCHANT:-}
+      Payment__Mellat__TerminalId: ${MELLAT_TERMINAL_ID:-}
+      Payment__Mellat__UserName: ${MELLAT_USER_NAME:-}
+      Payment__Mellat__UserPassword: ${MELLAT_USER_PASSWORD:-}
       Kyan__BaseUrl: ${KYAN_BASE_URL:-}
       Kyan__ApiKey: ${KYAN_API_KEY:-}
       Storage__UploadsPath: /app/uploads

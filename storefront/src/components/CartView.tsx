@@ -5,6 +5,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { Link } from '@/i18n/navigation';
 import { useCart } from '@/lib/cart';
 import { formatNumber } from '@/lib/format';
+import { usePaymentEnabled } from './PaymentSettings';
 import ProductImage from './ProductImage';
 
 export default function CartView() {
@@ -12,6 +13,7 @@ export default function CartView() {
   const tc = useTranslations('common');
   const locale = useLocale();
   const { items, setQty, remove } = useCart();
+  const paymentEnabled = usePaymentEnabled();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
@@ -68,9 +70,18 @@ export default function CartView() {
           </span>
         </div>
         <p className="text-xs text-slate-500">{t('note')}</p>
-        <Link href="/checkout" className="btn w-full">
-          {t('checkout')}
-        </Link>
+        {paymentEnabled ? (
+          <Link href="/checkout" className="btn w-full">
+            {t('checkout')}
+          </Link>
+        ) : (
+          <>
+            <span className="btn w-full cursor-not-allowed opacity-50" aria-disabled="true">
+              {t('checkout')}
+            </span>
+            <p className="text-xs text-amber-700">{t('salesPaused')}</p>
+          </>
+        )}
       </aside>
     </div>
   );

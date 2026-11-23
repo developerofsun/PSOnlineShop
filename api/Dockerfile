@@ -17,7 +17,9 @@ FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
 
 # Uploaded media lives here; mount a volume over it so images survive a redeploy.
-RUN mkdir -p /app/uploads
+# The directory must be owned by the runtime user, otherwise the app cannot write
+# into the volume and every upload fails with a 500.
+RUN mkdir -p /app/uploads && chown -R $APP_UID:$APP_UID /app/uploads
 
 COPY --from=build /app ./
 

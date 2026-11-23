@@ -225,6 +225,10 @@ public static class DbSeeder
             ["site.map_center_lng"] = "51.3890",
             ["site.map_zoom"] = "12",
 
+            // Online payments. When false, checkout is paused: the storefront blocks the cart and the
+            // API refuses to create orders. Turn off from Admin → Settings when the gateway is down.
+            ["site.payment_enabled"] = "true",
+
             // Feature switches (public, read by the storefront)
             ["site.shop3d_enabled"] = "true",
             ["site.assistant_enabled"] = "true",

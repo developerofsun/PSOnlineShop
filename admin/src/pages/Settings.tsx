@@ -37,6 +37,7 @@ type Values = {
   'site.test_mode_enabled': boolean;
   'site.test_mode_ribbon.fa': string;
   'site.test_mode_ribbon.en': string;
+  'site.payment_enabled': boolean;
 };
 
 /** Header looks offered by the preset picker; picking one also fills its three colours. */
@@ -94,6 +95,7 @@ export default function SettingsPage() {
       'site.test_mode_enabled': data['site.test_mode_enabled'] === 'true',
       'site.test_mode_ribbon.fa': data['site.test_mode_ribbon.fa'] ?? '',
       'site.test_mode_ribbon.en': data['site.test_mode_ribbon.en'] ?? '',
+      'site.payment_enabled': data['site.payment_enabled'] !== 'false',
     });
   }, [data, form]);
 
@@ -282,6 +284,17 @@ export default function SettingsPage() {
               <InputNumber min={3} max={18} style={{ width: '100%' }} />
             </Form.Item>
           </div>
+        </Card>
+
+        <Card title="پرداخت و فروش" style={{ marginBottom: 16 }}>
+          <Form.Item
+            name="site.payment_enabled"
+            label="فعال بودن پرداخت آنلاین"
+            valuePropName="checked"
+            extra="اگر خاموش باشد، فروش موقتاً متوقف می‌شود: دکمه‌ی پرداخت در سبد خرید غیرفعال می‌شود، صفحه‌ی پرداخت پیام «فروش موقتاً متوقف شده است» نشان می‌دهد و سرور هم سفارش جدید ثبت نمی‌کند. مشتریان می‌توانند محصولات را ببینند اما سفارش ثبت نمی‌شود. برای تعطیلی موقت فروشگاه یا قطعی درگاه از این گزینه استفاده کنید."
+          >
+            <Switch checkedChildren="فعال" unCheckedChildren="غیرفعال" />
+          </Form.Item>
         </Card>
 
         <Card title="حالت آزمایشی (نسخه نمایشی)" style={{ marginBottom: 16 }}>

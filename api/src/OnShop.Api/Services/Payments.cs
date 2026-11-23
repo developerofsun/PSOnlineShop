@@ -2,11 +2,19 @@ namespace OnShop.Api.Services;
 
 public record PaymentRequest(string OrderNumber, long Amount, string CallbackUrl, string? Phone);
 public record PaymentRequestResult(bool Success, string? Authority, string? RedirectUrl, string? Error);
-public record PaymentVerify(string OrderNumber, long Amount, string Authority, string? Status);
+public record PaymentVerify(
+    string OrderNumber, long Amount, string Authority, string? Status, string? Reference = null);
 public record PaymentVerifyResult(bool Success, string? RefId, string? Error);
 
 /// <summary>
-/// Abstraction over a payment provider. Implement one class per gateway (Zarinpal, IDPay, ...)
+/// What a provider sent back, normalized. OrderNumber is null when the provider does not echo it
+/// (Zarinpal), in which case the caller finds the order by Authority. Reference carries a
+/// provider-specific identifier that VerifyAsync needs (Mellat's SaleReferenceId).
+/// </summary>
+public record PaymentCallback(string? OrderNumber, string? Authority, string? Status, string? Reference = null);
+
+/// <summary>
+/// Abstraction over a payment provider. Implement one class per gateway (Zarinpal, Zibal, Mellat, ...)
 /// and register it in Program.cs based on Payment:Gateway.
 /// </summary>
 public interface IPaymentGateway
@@ -21,6 +29,30 @@ public interface IPaymentGateway
 
     Task<PaymentRequestResult> RequestAsync(PaymentRequest request, CancellationToken ct);
     Task<PaymentVerifyResult> VerifyAsync(PaymentVerify verify, CancellationToken ct);
+
+    /// <summary>
+    /// Reads the provider's return request (query string, or a posted form for Mellat) into the common
+    /// shape. Returning null means "this request is not a payment callback" (the endpoint answers 400).
+    /// The default reads ?order=&amp;authority=&amp;status=, which is what Zarinpal and the Fake gateway use.
+    /// </summary>
+    Task<PaymentCallback?> ReadCallbackAsync(HttpRequest request, CancellationToken ct)
+    {
+        var authority = request.Query["authority"].ToString();
+        if (string.IsNullOrEmpty(authority)) return Task.FromResult<PaymentCallback?>(null);
+
+        var order = request.Query["order"].ToString();
+        var status = request.Query["status"].ToString();
+        return Task.FromResult<PaymentCallback?>(new PaymentCallback(
+            string.IsNullOrEmpty(order) ? null : order,
+            authority,
+            string.IsNullOrEmpty(status) ? null : status));
+    }
+
+    /// <summary>
+    /// HTML page that forwards the browser to the provider with a POST. Null when the provider accepts
+    /// a plain GET redirect; Mellat needs this (its startpay page only reads a posted RefId).
+    /// </summary>
+    string? BuildRedirectPage(string authority) => null;
 }
 
 /// <summary>Local development gateway: no network calls. Refused in Production (see Program.cs).</summary>
