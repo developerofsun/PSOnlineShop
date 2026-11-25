@@ -168,3 +168,20 @@ body {
   font-size: 12px;
   outline: none;
 }
+.fd-html-input {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.fd-html-preview {
+  border: 1px dashed #d6d2c9;
+  border-radius: 8px;
+  padding: 10px;
+  text-align: center;
+  overflow: auto;
+  background: #faf9f6;
+}
+.fd-html-preview img {
+  max-width: 100%;
+  height: auto;
+}

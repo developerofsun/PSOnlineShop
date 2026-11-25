@@ -181,7 +181,16 @@ export type BannerRow = { id: number; name: string; imageUrl: string; linkUrl: s
 export type TextRow = { id: number; name: string; key: string; content: L10n; isActive: boolean };
 
 // ---------- footer designer ----------
-export type FooterElementType = 'heading' | 'text' | 'links' | 'contact' | 'logo' | 'newsletter' | 'socials' | 'image';
+export type FooterElementType =
+  | 'heading'
+  | 'text'
+  | 'links'
+  | 'contact'
+  | 'logo'
+  | 'newsletter'
+  | 'socials'
+  | 'image'
+  | 'html';
 export type FooterSize = 'sm' | 'md' | 'lg' | 'xl';
 export type FooterAlign = 'start' | 'center' | 'end';
 export type FooterLinkItem = { text: L10n; link: string | null };
@@ -195,6 +204,8 @@ export type FooterElement = {
     logo?: boolean;
     textOn?: boolean;
     imageUrl?: string;
+    /** Sanitized by the API: allowlisted tags/attributes only. */
+    html?: string;
     size?: FooterSize;
     align?: FooterAlign | null;
   };

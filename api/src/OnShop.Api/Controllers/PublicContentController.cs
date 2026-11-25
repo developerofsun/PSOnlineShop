@@ -104,6 +104,9 @@ public class PublicContentController(AppDbContext db, CatalogService catalog) : 
                     case FooterElementTypes.Image:
                         elements.Add(new { type = e.Type, imageUrl = Str(cfg, "imageUrl"), size = Size(cfg), align = Str(cfg, "align") });
                         break;
+                    case FooterElementTypes.Html:
+                        elements.Add(new { type = e.Type, html = Str(cfg, "html"), size = Size(cfg), align = Str(cfg, "align") });
+                        break;
                     case FooterElementTypes.Newsletter:
                     case FooterElementTypes.Socials:
                         elements.Add(new { type = e.Type, size = Size(cfg) });

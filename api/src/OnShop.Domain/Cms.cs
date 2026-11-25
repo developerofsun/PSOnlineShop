@@ -101,7 +101,9 @@ public static class FooterElementTypes
     public const string Newsletter = "newsletter";
     public const string Socials = "socials";
     public const string Image = "image";
-    public static readonly string[] All = [Heading, Text, Links, Contact, Logo, Newsletter, Socials, Image];
+    /// <summary>Raw HTML pasted by the admin (e.g. a trust badge); sanitized by the API before it is stored.</summary>
+    public const string Html = "html";
+    public static readonly string[] All = [Heading, Text, Links, Contact, Logo, Newsletter, Socials, Image, Html];
     /// <summary>Icons a contact item may use.</summary>
     public static readonly string[] Icons = ["phone", "mail", "pin", "clock"];
     /// <summary>Size presets every element accepts (the storefront maps them to fonts/icons).</summary>

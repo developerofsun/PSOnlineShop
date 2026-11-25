@@ -261,6 +261,23 @@ public partial class AdminFooterController(AppDbContext db) : ControllerBase
                 clean = new { imageUrl = url?.Trim(), size, align = Align(cfg) };
                 break;
             }
+            case FooterElementTypes.Html:
+            {
+                var html = Str(cfg, "html") ?? "";
+                if (html.Length > FooterHtml.MaxLength)
+                {
+                    error = $"کد HTML حداکثر {FooterHtml.MaxLength} کاراکتر می‌تواند باشد.";
+                    return null;
+                }
+                var cleanHtml = FooterHtml.Sanitize(html);
+                if (!string.IsNullOrWhiteSpace(html) && string.IsNullOrWhiteSpace(cleanHtml))
+                {
+                    error = "کد HTML نامعتبر است (اسکریپت، استایل و تگ‌های ناشناخته مجاز نیستند).";
+                    return null;
+                }
+                clean = new { html = cleanHtml, size, align = Align(cfg) };
+                break;
+            }
             // Newsletter and socials are a single control / a fixed icon set; only their size varies.
             case FooterElementTypes.Newsletter:
             case FooterElementTypes.Socials:

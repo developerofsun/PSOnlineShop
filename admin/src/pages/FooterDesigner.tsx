@@ -4,6 +4,7 @@ import {
   ArrowLeftOutlined,
   ArrowRightOutlined,
   ArrowUpOutlined,
+  CodeOutlined,
   CopyOutlined,
   CustomerServiceOutlined,
   DeleteOutlined,
@@ -72,6 +73,7 @@ const ELEMENT_TYPES: { type: FooterElementType; label: string; icon: ReactNode; 
   { type: 'newsletter', label: 'عضویت در خبرنامه', icon: <MailOutlined />, hint: 'کادر ایمیل خبرنامه' },
   { type: 'socials', label: 'شبکه‌های اجتماعی', icon: <GlobalOutlined />, hint: 'آیکون شبکه‌های فعال سایت' },
   { type: 'image', label: 'تصویر / نشان', icon: <PictureOutlined />, hint: 'مثلاً نماد اعتماد' },
+  { type: 'html', label: 'بلوک HTML', icon: <CodeOutlined />, hint: 'کد HTML دلخواه با لینک و تصویر (مثلاً نماد اعتماد)' },
 ];
 
 /** Storefront routes that are not pages (the API's footer links accept site-relative paths). */
@@ -94,6 +96,8 @@ const emptyConfig = (type: FooterElementType): FooterElement['config'] => {
       return { logo: true, textOn: true };
     case 'image':
       return { imageUrl: '' };
+    case 'html':
+      return { html: '' };
     case 'heading':
     case 'text':
       return { text: {} };
@@ -149,6 +153,8 @@ function toModel(d: {
             return { type: e.type, config: { logo: !!cfg.logo, textOn: !!cfg.text, size, align } };
           case 'image':
             return { type: e.type, config: { imageUrl: (cfg.imageUrl as string) ?? '', size, align } };
+          case 'html':
+            return { type: e.type, config: { html: (cfg.html as string) ?? '', size, align } };
           default:
             return { type: e.type, config: { size } };
         }
@@ -184,6 +190,8 @@ function toBody(m: FooterLayout) {
             return { type: e.type, config: { logo: !!e.config.logo, text: !!e.config.textOn, size, align: e.config.align ?? null } };
           case 'image':
             return { type: e.type, config: { imageUrl: e.config.imageUrl ?? '', size, align: e.config.align ?? null } };
+          case 'html':
+            return { type: e.type, config: { html: e.config.html ?? '', size, align: e.config.align ?? null } };
           default:
             return { type: e.type, config: { size } };
         }
@@ -213,6 +221,8 @@ function summarize(e: FooterElement, lang: string): string {
       return [e.config.logo && 'لوگو', e.config.textOn && 'نام سایت'].filter(Boolean).join(' + ') || '(خالی)';
     case 'image':
       return e.config.imageUrl ? 'تصویر انتخاب شده' : '(بدون تصویر)';
+    case 'html':
+      return e.config.html ? 'کد HTML' : '(خالی)';
     case 'socials':
       return 'آیکون‌های سایت';
     case 'newsletter':
@@ -593,6 +603,7 @@ function SizeControls({ element, set }: { element: FooterElement; set: (fn: (e: 
     newsletter: 'اندازه کادر و دکمه',
     socials: 'اندازه آیکون‌ها',
     image: 'اندازه تصویر',
+    html: 'کد HTML',
   };
   return (
     <>
@@ -831,6 +842,49 @@ function ElementEditor({
           }
         />
       </Form.Item>
+      </>
+    );
+  }
+
+  if (element.type === 'html') {
+    return (
+      <>
+        <Form.Item label="چیدمان در ستون">
+          <Segmented
+            size="small"
+            value={element.config.align ?? 'start'}
+            onChange={(v) =>
+              set((el) => {
+                el.config.align = v as FooterAlign;
+              })
+            }
+            options={[
+              { value: 'start', label: 'ابتدای ستون' },
+              { value: 'center', label: 'وسط' },
+              { value: 'end', label: 'انتهای ستون' },
+            ]}
+          />
+        </Form.Item>
+        <Form.Item
+          label="کد HTML"
+          extra="فقط تگ‌های ساده (a، img، div، span، p، …) و آدرس‌های امن ذخیره می‌شوند؛ script و style حذف می‌شوند."
+        >
+          <Input.TextArea
+            rows={8}
+            dir="ltr"
+            className="fd-html-input"
+            placeholder="<a href='https://trustseal.enamad.ir/...'><img src='...' alt='' /></a>"
+            value={element.config.html ?? ''}
+            onChange={(e) =>
+              set((el) => {
+                el.config.html = e.target.value;
+              })
+            }
+          />
+        </Form.Item>
+        {element.config.html?.trim() ? (
+          <div className="fd-html-preview" dangerouslySetInnerHTML={{ __html: element.config.html }} />
+        ) : null}
       </>
     );
   }
@@ -1172,6 +1226,19 @@ function FooterPreview({
             )}
             {el.config.textOn && <span style={{ color: fg, fontWeight: 800, fontSize: px(BASE.logoText, size) }}>نام فروشگاه</span>}
           </div>,
+        );
+      case 'html':
+        return frame(
+          el.config.html?.trim() ? (
+            <div
+              style={{ display: 'flex', width: '100%', justifyContent: al(el.config.align) }}
+              dangerouslySetInnerHTML={{ __html: el.config.html }}
+            />
+          ) : (
+            <span style={{ fontSize: 11, color: muted, border: `1px dashed ${muted}`, borderRadius: 6, padding: '10px 8px' }}>
+              بلوک HTML خالی
+            </span>
+          ),
         );
       case 'newsletter':
         return frame(

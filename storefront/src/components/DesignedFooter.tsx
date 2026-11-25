@@ -14,6 +14,7 @@ type Element =
   | { type: 'contact'; items: Item[]; size?: Size }
   | { type: 'logo'; logo: boolean; text: boolean; size?: Size; align?: Align }
   | { type: 'image'; imageUrl?: string | null; size?: Size; align?: Align }
+  | { type: 'html'; html?: string | null; size?: Size; align?: Align }
   | { type: 'newsletter'; size?: Size }
   | { type: 'socials'; size?: Size };
 
@@ -147,6 +148,16 @@ export default async function DesignedFooter({
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={el.imageUrl} alt="" className="w-auto max-w-full object-contain" style={{ height: px(BASE.imageH, el.size) }} />
           </div>
+        ) : null;
+      case 'html':
+        // Sanitized by the API (allowlist of tags/attributes) before it was stored.
+        return el.html ? (
+          <div
+            key={key}
+            className="footer-html"
+            style={{ display: 'flex', width: '100%', justifyContent: alignItems(el.align) }}
+            dangerouslySetInnerHTML={{ __html: el.html }}
+          />
         ) : null;
       case 'newsletter':
         // No newsletter backend exists yet, so this is a mailto sign-up: it works without new infrastructure.
