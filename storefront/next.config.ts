@@ -10,6 +10,11 @@ const API_URL = process.env.API_URL ?? 'http://localhost:5080';
 // string to allow no remote images at all (the map then shows no tiles).
 const TILE_ORIGIN = process.env.MAP_TILE_ORIGIN ?? 'https://tile.openstreetmap.org';
 
+// The e-namad trust seal is a remote <img> pasted into a footer HTML block. It only loads when the request
+// comes from the domain registered in enamad, so the snippet's referrerpolicy="origin" is required, and the
+// origin has to be allowed here or the CSP blocks the badge in production.
+const ENAMAD_ORIGIN = 'https://trustseal.enamad.ir';
+
 // Everything else must come from our own origin: no CDN, no remote fonts/scripts.
 // (Next.js needs inline scripts/styles; in dev it also needs eval for hot reload.)
 const csp = [
@@ -17,7 +22,7 @@ const csp = [
   "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
   // Uploaded images are proxied through this origin (/uploads, /icon, /backend), so 'self' covers them.
-  `img-src 'self' data: blob: ${TILE_ORIGIN}`.trim(),
+  `img-src 'self' data: blob: ${TILE_ORIGIN} ${ENAMAD_ORIGIN}`.trim(),
   "font-src 'self'",
   "connect-src 'self'",
   "manifest-src 'self'",
