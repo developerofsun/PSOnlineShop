@@ -28,11 +28,18 @@ export default async function Header({
   ]);
   const style = parseHeaderStyle(settings ?? null);
   const searchFixed = style.searchWidth > 0;
+  // The thin strip above the header is optional and its two texts are editable (Settings → Header).
+  const stripEnabled = settings?.['site.strip_enabled'] !== 'false';
+  const stripText = settings?.[`site.strip_text.${locale}`];
+  const stripNote = settings?.[`site.strip_note.${locale}`];
+  const stripLanguage = settings?.['site.strip_lang_visible'] !== 'false';
 
   return (
     // Sizes and colours come from the admin (Settings → Header); the CSS variables are read in globals.css.
     <div className="site-header" style={headerVars(style)}>
-      <DeliveryBar supportText={supportText} />
+      {stripEnabled && (
+        <DeliveryBar supportText={supportText} text={stripText} note={stripNote} showLanguage={stripLanguage} />
+      )}
       {/* Only the main bar sticks to the top while scrolling */}
       <div className="site-header-bar sticky top-0 z-40 border-b border-slate-200">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5">

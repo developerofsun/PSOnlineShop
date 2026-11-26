@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace OnShop.Domain;
 
@@ -82,5 +83,91 @@ public static class Localized
         if (d.TryGetValue(lang, out var v) && !string.IsNullOrWhiteSpace(v)) return v;
         if (d.TryGetValue(Languages.Default, out v) && !string.IsNullOrWhiteSpace(v)) return v;
         return d.Values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x));
+    }
+}
+
+/// <summary>Reads, normalizes and validates the appearance options stored in <see cref="Slide.StyleJson"/>.</summary>
+public static class SlideStyles
+{
+    public static readonly string[] Aligns = ["start", "center", "end"];
+
+    private static readonly Regex HexColor =
+        new(@"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$", RegexOptions.Compiled);
+
+    // Web defaults: camelCase on the way out (matching the API's JSON), case-insensitive when writing/reading names.
+    private static readonly JsonSerializerOptions Options =
+        new(JsonSerializerDefaults.Web) { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+
+    /// <summary>Missing or damaged JSON falls back to the defaults (everything shown), never to something hidden.</summary>
+    public static SlideStyle Parse(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return new SlideStyle();
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var r = doc.RootElement;
+            if (r.ValueKind != JsonValueKind.Object) return new SlideStyle();
+            return new SlideStyle(
+                Bool(r, "showText") ?? true,
+                Bool(r, "showButton") ?? true,
+                Bool(r, "showBackground") ?? true,
+                Text(r, "backgroundColor"),
+                Text(r, "overlayColor"),
+                Text(r, "textColor"),
+                Text(r, "buttonColor"),
+                Text(r, "buttonTextColor"),
+                Text(r, "textAlign") ?? "start",
+                Text(r, "device") ?? Devices.All);
+        }
+        catch (JsonException) { return new SlideStyle(); }
+    }
+
+    /// <summary>Normalizes before storage: unknown alignment falls back, invalid colours become null.</summary>
+    public static SlideStyle Clean(SlideStyle? s) => new(
+        s?.ShowText ?? true,
+        s?.ShowButton ?? true,
+        s?.ShowBackground ?? true,
+        Color(s?.BackgroundColor),
+        Color(s?.OverlayColor),
+        Color(s?.TextColor),
+        Color(s?.ButtonColor),
+        Color(s?.ButtonTextColor),
+        Aligns.Contains(s?.TextAlign ?? "") ? s!.TextAlign : "start",
+        Devices.IsValid(s?.Device) ? s!.Device : Devices.All);
+
+    public static string ToJson(SlideStyle? s) => JsonSerializer.Serialize(Clean(s), Options);
+
+    /// <summary>Null when the style is acceptable; otherwise the message the admin sees.</summary>
+    public static string? Validate(SlideStyle? s)
+    {
+        if (s is null) return null;
+        foreach (var (name, value) in new[]
+                 {
+                     ("پس‌زمینه", s.BackgroundColor), ("پرده‌ی متن", s.OverlayColor), ("متن", s.TextColor),
+                     ("دکمه", s.ButtonColor), ("متن دکمه", s.ButtonTextColor)
+                 })
+            if (!string.IsNullOrWhiteSpace(value) && !HexColor.IsMatch(value.Trim()))
+                return $"رنگ {name} باید کد هگز باشد (مثلاً #1f2937).";
+        if (s.TextAlign is { } align && !Aligns.Contains(align)) return "جهت متن نامعتبر است.";
+        if (s.Device is { } device && !Devices.IsValid(device)) return "نمایش روی دستگاه نامعتبر است.";
+        return null;
+    }
+
+    private static string? Color(string? c) => string.IsNullOrWhiteSpace(c) ? null : (HexColor.IsMatch(c.Trim()) ? c.Trim() : null);
+
+    private static bool? Bool(JsonElement r, string name) =>
+        Find(r, name) is { ValueKind: JsonValueKind.True or JsonValueKind.False } v ? v.GetBoolean() : null;
+
+    private static string? Text(JsonElement r, string name) =>
+        Find(r, name) is { ValueKind: JsonValueKind.String } v && !string.IsNullOrWhiteSpace(v.GetString())
+            ? v.GetString()!.Trim() : null;
+
+    /// <summary>Case-insensitive lookup, so JSON written by an older build (PascalCase) still reads correctly.</summary>
+    private static JsonElement? Find(JsonElement r, string name)
+    {
+        foreach (var p in r.EnumerateObject())
+            if (string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase))
+                return p.Value;
+        return null;
     }
 }

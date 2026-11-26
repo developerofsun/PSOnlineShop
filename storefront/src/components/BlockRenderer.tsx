@@ -25,6 +25,10 @@ function CategoryTile({ c }: { c: CategoryItem }) {
   );
 }
 
+/** Blocks limited to one kind of screen are hidden with CSS, so the page stays a server component. */
+const deviceClass = (device: BlockDto['device']) =>
+  device === 'desktop' ? 'hidden md:block' : device === 'mobile' ? 'md:hidden' : '';
+
 /** Renders the blocks of a CMS page in order. Each block type maps to one section. */
 export default function BlockRenderer({ blocks }: { blocks: BlockDto[] }) {
   const t = useTranslations('home');
@@ -32,13 +36,16 @@ export default function BlockRenderer({ blocks }: { blocks: BlockDto[] }) {
   return (
     <div className="space-y-12">
       {blocks.map((b) => {
+        let node: React.ReactNode = null;
+
         switch (b.type) {
           case 'slider':
-            return <HeroSlider key={b.id} slides={b.data.slides} />;
+            node = <HeroSlider slides={b.data.slides} />;
+            break;
 
           case 'banner':
-            return (
-              <SmartLink key={b.id} href={b.data.linkUrl} className="block overflow-hidden rounded-xl">
+            node = (
+              <SmartLink href={b.data.linkUrl} className="block overflow-hidden rounded-xl">
                 <div
                   className={`flex min-h-[110px] items-center bg-cover bg-center p-6 text-white sm:min-h-[150px] sm:p-10 ${b.data.imageUrl ? '' : 'bg-accent-500'}`}
                   style={b.data.imageUrl ? { backgroundImage: `url(${JSON.stringify(b.data.imageUrl)})` } : undefined}
@@ -47,17 +54,19 @@ export default function BlockRenderer({ blocks }: { blocks: BlockDto[] }) {
                 </div>
               </SmartLink>
             );
+            break;
 
           case 'text':
-            return b.data.text ? (
-              <section key={b.id} className="mx-auto max-w-3xl whitespace-pre-line border-s-4 border-accent-500 ps-5 leading-8 text-slate-700">
+            node = b.data.text ? (
+              <section className="mx-auto max-w-3xl whitespace-pre-line border-s-4 border-accent-500 ps-5 leading-8 text-slate-700">
                 {b.data.text}
               </section>
             ) : null;
+            break;
 
           case 'categories':
-            return (
-              <section key={b.id}>
+            node = (
+              <section>
                 {b.data.title && (
                   <div className="section-title mb-3">
                     <h2>{b.data.title}</h2>
@@ -72,10 +81,11 @@ export default function BlockRenderer({ blocks }: { blocks: BlockDto[] }) {
                 </CategoryCarousel>
               </section>
             );
+            break;
 
           case 'products':
-            return (
-              <section key={b.id}>
+            node = (
+              <section>
                 <div className="section-title mb-3">
                   <h2>{b.data.title ?? ''}</h2>
                   <Link
@@ -92,10 +102,18 @@ export default function BlockRenderer({ blocks }: { blocks: BlockDto[] }) {
                 </div>
               </section>
             );
-
-          default:
-            return null;
+            break;
         }
+
+        const className = deviceClass(b.device);
+        if (!node) return null;
+        return className ? (
+          <div key={b.id} className={className}>
+            {node}
+          </div>
+        ) : (
+          <div key={b.id}>{node}</div>
+        );
       })}
     </div>
   );

@@ -34,6 +34,12 @@ type Values = {
   'site.header_bg_color': string;
   'site.header_text_color': string;
   'site.header_accent_color': string;
+  'site.strip_enabled': boolean;
+  'site.strip_text.fa': string;
+  'site.strip_text.en': string;
+  'site.strip_note.fa': string;
+  'site.strip_note.en': string;
+  'site.strip_lang_visible': boolean;
   'site.test_mode_enabled': boolean;
   'site.test_mode_ribbon.fa': string;
   'site.test_mode_ribbon.en': string;
@@ -85,6 +91,8 @@ export default function SettingsPage() {
   });
   const [hasPassword, setHasPassword] = useState(false);
   const gateway = Form.useWatch('payment.gateway', form) as string | undefined;
+  // Computed by the API: false while the chosen gateway still misses credentials (checkout is paused then).
+  const gatewayReady = pay?.['payment.ready'] !== 'false';
 
   useEffect(() => {
     if (!data) return;
@@ -116,6 +124,12 @@ export default function SettingsPage() {
       'site.header_bg_color': data['site.header_bg_color'] || HEADER_PRESETS.brand.bg,
       'site.header_text_color': data['site.header_text_color'] || HEADER_PRESETS.brand.text,
       'site.header_accent_color': data['site.header_accent_color'] || HEADER_PRESETS.brand.accent,
+      'site.strip_enabled': data['site.strip_enabled'] !== 'false',
+      'site.strip_text.fa': data['site.strip_text.fa'] ?? '',
+      'site.strip_text.en': data['site.strip_text.en'] ?? '',
+      'site.strip_note.fa': data['site.strip_note.fa'] ?? '',
+      'site.strip_note.en': data['site.strip_note.en'] ?? '',
+      'site.strip_lang_visible': data['site.strip_lang_visible'] !== 'false',
       'site.test_mode_enabled': data['site.test_mode_enabled'] === 'true',
       'site.test_mode_ribbon.fa': data['site.test_mode_ribbon.fa'] ?? '',
       'site.test_mode_ribbon.en': data['site.test_mode_ribbon.en'] ?? '',
@@ -151,9 +165,11 @@ export default function SettingsPage() {
         else body[k] = str;
       }
       body['site.map_tile_url'] = toAscii(v['site.map_tile_url'] ?? '').trim() || DEFAULT_TILE;
-      await api.put('/api/admin/payment', gatewayBody);
+      // Incomplete gateway credentials are saved with a warning (they no longer fail the save).
+      const saved = await api.put<{ warning?: string | null }>('/api/admin/payment', gatewayBody);
       await api.put('/api/admin/settings', body);
-      message.success('تنظیمات ذخیره شد');
+      if (saved?.warning) message.warning(saved.warning, 8);
+      else message.success('تنظیمات ذخیره شد');
       void qc.invalidateQueries({ queryKey: ['settings'] });
       void qc.invalidateQueries({ queryKey: ['payment-settings'] });
     } catch (e) {
@@ -259,6 +275,55 @@ export default function SettingsPage() {
           </div>
         </Card>
 
+        <Card title="نوار بالای هدر" style={{ marginBottom: 16 }}>
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message="نوار باریک بالای هدر: متن سمت چپ، متن سمت راست و کلید تغییر زبان. می‌توانید آن را کامل خاموش کنید یا متن‌هایش را جایگزین کنید."
+          />
+          <Form.Item
+            name="site.strip_enabled"
+            label="نمایش نوار بالای هدر"
+            valuePropName="checked"
+            extra="با خاموش کردن آن، کل نوار (متن ارسال، پیام کنار آن و کلید زبان) از همه‌ی صفحات حذف می‌شود."
+          >
+            <Switch checkedChildren="نمایش" unCheckedChildren="مخفی" />
+          </Form.Item>
+          <Form.Item
+            name="site.strip_text.fa"
+            label="متن سمت چپ (فارسی)"
+            extra="خالی = متن پیش‌فرض «ارسال به سراسر کشور». وقتی «آدرس تحویل روی نقشه» روشن باشد، جای این متن آدرس مشتری نمایش داده می‌شود."
+          >
+            <Input placeholder="ارسال به سراسر کشور" />
+          </Form.Item>
+          <Form.Item
+            name="site.strip_text.en"
+            label="Left text (English)"
+            extra="Empty = the built-in «Nationwide shipping»."
+          >
+            <Input dir="ltr" placeholder="Nationwide shipping" />
+          </Form.Item>
+          <Form.Item
+            name="site.strip_note.fa"
+            label="متن سمت راست (فارسی)"
+            extra="مثلاً «۰۲۱-۱۲۳۴۵۶۷۸ | پشتیبانی ۹ تا ۲۱». خالی = اولین خط متن پشتیبانی از بخش «متن‌ها»."
+          >
+            <Input />
+          </Form.Item>
+          <Form.Item name="site.strip_note.en" label="Right text (English)" extra="Empty = the support text's first line.">
+            <Input dir="ltr" />
+          </Form.Item>
+          <Form.Item
+            name="site.strip_lang_visible"
+            label="نمایش کلید تغییر زبان"
+            valuePropName="checked"
+            extra="اگر خاموش باشد، مشتری زبان سایت را عوض نمی‌کند (محتوای هر دو زبان همچنان ذخیره می‌شود)."
+          >
+            <Switch checkedChildren="نمایش" unCheckedChildren="مخفی" />
+          </Form.Item>
+        </Card>
+
         <Card title="فروشگاه" style={{ marginBottom: 16 }}>
           <Form.Item name="shop.shipping_cost" label="هزینه ثابت ارسال (تومان)">
             <InputNumber min={0} style={{ width: '100%' }} />
@@ -352,6 +417,14 @@ export default function SettingsPage() {
             style={{ marginBottom: 16 }}
             message="مشخصات درگاه همین‌جا ذخیره می‌شود و بلافاصله اعمال می‌شود؛ نیازی به ری‌استارت سرور نیست و این مقادیر بر فایل تنظیمات سرور اولویت دارند. رمز درگاه فقط نوشته می‌شود و دیگر نمایش داده نمی‌شود."
           />
+          {!gatewayReady && (
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginBottom: 16 }}
+              message="این درگاه هنوز کامل تنظیم نشده است؛ تا تکمیل مشخصات، پرداخت در فروشگاه انجام نمی‌شود. مشخصات را ذخیره کنید و دوباره بررسی کنید."
+            />
+          )}
           <Form.Item
             name="payment.gateway"
             label="درگاه پرداخت فعال"

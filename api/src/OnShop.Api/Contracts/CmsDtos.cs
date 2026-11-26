@@ -6,10 +6,15 @@ namespace OnShop.Api.Contracts;
 // ---------- Admin inputs / outputs ----------
 public record SlideInput(
     string ImageUrl, string? LinkUrl,
-    Dictionary<string, string>? Title, Dictionary<string, string>? Subtitle, Dictionary<string, string>? ButtonText);
+    Dictionary<string, string>? Title, Dictionary<string, string>? Subtitle, Dictionary<string, string>? ButtonText,
+    SlideStyle? Style);
 public record SliderInput(string Name, bool IsActive, List<SlideInput> Slides);
 public record SliderListItem(int Id, string Name, bool IsActive, int SlideCount);
-public record SliderDetail(int Id, string Name, bool IsActive, List<SlideInput> Slides);
+public record SlideDetail(
+    string ImageUrl, string? LinkUrl,
+    Dictionary<string, string> Title, Dictionary<string, string> Subtitle, Dictionary<string, string> ButtonText,
+    SlideStyle Style);
+public record SliderDetail(int Id, string Name, bool IsActive, List<SlideDetail> Slides);
 
 public record BannerInput(string Name, string ImageUrl, string? LinkUrl, Dictionary<string, string>? Title, bool IsActive);
 public record BannerDetail(int Id, string Name, string ImageUrl, string? LinkUrl, Dictionary<string, string> Title, bool IsActive);
@@ -61,13 +66,13 @@ public record PublicFooter(
     List<FooterColumnDto> Columns, List<FooterSocialDto> Socials);
 
 // ---------- Public (resolved for one language) ----------
-public record SlideDto(string ImageUrl, string? LinkUrl, string? Title, string? Subtitle, string? ButtonText);
+public record SlideDto(string ImageUrl, string? LinkUrl, string? Title, string? Subtitle, string? ButtonText, SlideStyle Style);
 public record SliderData(List<SlideDto> Slides);
 public record BannerData(string ImageUrl, string? LinkUrl, string? Title);
 public record TextData(string? Text);
 public record ProductsData(string? Title, string? CategorySlug, List<ProductListItem> Items);
 public record CategoriesData(string? Title, List<CategoryItem> Items);
-public record BlockDto(int Id, string Type, object? Data);
+public record BlockDto(int Id, string Type, string Device, object? Data);
 public record PublicPage(int Id, string Title, string Slug, string? SeoTitle, string? SeoDescription,
     Dictionary<string, string> Alternates, List<BlockDto> Blocks);
 public record PublicText(string? Text);

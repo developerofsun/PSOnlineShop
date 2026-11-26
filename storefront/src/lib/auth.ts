@@ -58,7 +58,12 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   }
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new ApiError(data.error ?? data.title ?? `Error ${res.status}`, res.status);
+    // {error} from our endpoints, or ASP.NET's {title, errors}; never a bare "Error 400".
+    const errors = (data.errors ?? {}) as Record<string, unknown>;
+    const firstError = Object.values(errors)
+      .flatMap((v) => (Array.isArray(v) ? v : [v]))
+      .find((v): v is string => typeof v === 'string' && v.length > 0);
+    throw new ApiError(data.error ?? firstError ?? data.title ?? `Error ${res.status}`, res.status);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;

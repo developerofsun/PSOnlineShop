@@ -20,6 +20,8 @@ public class PaymentSettingsController(
     AppDbContext db, PaymentSettingsStore store, IHostEnvironment env) : ControllerBase
 {
     private const string HasPasswordKey = "payment.mellat.has_password";
+    /// <summary>Read-only, computed: whether the chosen gateway has everything it needs to take a payment.</summary>
+    private const string ReadyKey = "payment.ready";
 
     [HttpGet]
     public async Task<IActionResult> Get(CancellationToken ct)
@@ -35,7 +37,8 @@ public class PaymentSettingsController(
             [PaymentKeys.MellatUserName] = s.MellatUserName,
             [PaymentKeys.MellatServiceUrl] = s.MellatServiceUrl,
             [PaymentKeys.MellatStartPayUrl] = s.MellatStartPayUrl,
-            [HasPasswordKey] = string.IsNullOrWhiteSpace(s.MellatUserPassword) ? "false" : "true"
+            [HasPasswordKey] = string.IsNullOrWhiteSpace(s.MellatUserPassword) ? "false" : "true",
+            [ReadyKey] = Incomplete(s) is null ? "true" : "false"
         });
     }
 
@@ -72,7 +75,10 @@ public class PaymentSettingsController(
             MellatStartPayUrl = Pick(PaymentKeys.MellatStartPayUrl, current.MellatStartPayUrl)
         };
 
-        var error = Validate(candidate);
+        // Only malformed values are refused. Missing credentials are allowed to be saved: the admin must be
+        // able to switch the gateway first and fill the terminal details afterwards without a failed save.
+        // Until they are filled the checkout answers with a readable "gateway not configured" message.
+        var error = ValidateFormats(candidate);
         if (error is not null) return BadRequest(new { error });
 
         var existing = await db.Settings.Where(s => s.Key.StartsWith("payment."))
@@ -97,39 +103,25 @@ public class PaymentSettingsController(
         }
 
         await db.SaveChangesAsync(ct);
-        return NoContent();
+        return Ok(new { warning = Incomplete(candidate) });
     }
 
-    /// <summary>Null when the configuration can serve payments; otherwise a message for the admin.</summary>
-    private static string? Validate(PaymentSettings s)
+    /// <summary>Null when the values are well formed; otherwise a message for the admin. Emptiness is fine.</summary>
+    private static string? ValidateFormats(PaymentSettings s)
     {
         switch (PaymentGateways.Canonical(s.Gateway))
         {
             case PaymentGateways.Mellat:
-                if (string.IsNullOrWhiteSpace(s.MellatTerminalId))
-                    return "شماره ترمینال ملت را وارد کنید.";
-                if (!s.MellatTerminalId.All(char.IsAsciiDigit))
+                if (!string.IsNullOrWhiteSpace(s.MellatTerminalId) && !s.MellatTerminalId.All(char.IsAsciiDigit))
                     return "شماره ترمینال ملت باید فقط رقم باشد.";
-                if (string.IsNullOrWhiteSpace(s.MellatUserName))
-                    return "نام کاربری درگاه ملت را وارد کنید.";
-                if (string.IsNullOrWhiteSpace(s.MellatUserPassword))
-                    return "رمز درگاه ملت را وارد کنید.";
-                if (!IsHttpUrl(s.MellatServiceUrl))
+                if (!string.IsNullOrWhiteSpace(s.MellatServiceUrl) && !IsHttpUrl(s.MellatServiceUrl))
                     return "آدرس سرویس ملت باید یک نشانی کامل http یا https باشد.";
-                if (!IsHttpUrl(s.MellatStartPayUrl))
+                if (!string.IsNullOrWhiteSpace(s.MellatStartPayUrl) && !IsHttpUrl(s.MellatStartPayUrl))
                     return "آدرس صفحه پرداخت ملت باید یک نشانی کامل http یا https باشد.";
                 return null;
 
             case PaymentGateways.Zarinpal:
-                return string.IsNullOrWhiteSpace(s.ZarinpalMerchantId)
-                    ? "شناسه پذیرنده (Merchant ID) زرین‌پال را وارد کنید."
-                    : null;
-
             case PaymentGateways.Zibal:
-                return string.IsNullOrWhiteSpace(s.ZibalMerchant)
-                    ? "کد پذیرنده (Merchant) زیبال را وارد کنید."
-                    : null;
-
             case PaymentGateways.Offline:
             case PaymentGateways.Fake:
                 return null;
@@ -138,6 +130,33 @@ public class PaymentSettingsController(
                 return "درگاه پرداخت انتخاب‌شده معتبر نیست.";
         }
     }
+
+    /// <summary>
+    /// What is still missing before the chosen gateway can take a payment, or null when it is ready. Saving is
+    /// not blocked by this: the admin panel shows it as a warning so a half-filled gateway is never a mystery.
+    /// </summary>
+    internal static string? Incomplete(PaymentSettings s) =>
+        PaymentGateways.Canonical(s.Gateway) switch
+        {
+            PaymentGateways.Mellat => new[]
+            {
+                (string.IsNullOrWhiteSpace(s.MellatTerminalId), "شماره ترمینال"),
+                (string.IsNullOrWhiteSpace(s.MellatUserName), "نام کاربری"),
+                (string.IsNullOrWhiteSpace(s.MellatUserPassword), "رمز درگاه"),
+            }.Where(x => x.Item1).Select(x => x.Item2).ToList() is { Count: > 0 } missing
+                ? $"درگاه به‌پرداخت ملت هنوز {string.Join("، ", missing)} را ندارد؛ تا تکمیل آن پرداخت انجام نمی‌شود."
+                : null,
+
+            PaymentGateways.Zarinpal when string.IsNullOrWhiteSpace(s.ZarinpalMerchantId) =>
+                "شناسه پذیرنده (Merchant ID) زرین‌پال را وارد کنید؛ تا آن زمان پرداخت انجام نمی‌شود.",
+
+            PaymentGateways.Zibal when string.IsNullOrWhiteSpace(s.ZibalMerchant) =>
+                "کد پذیرنده (Merchant) زیبال را وارد کنید؛ تا آن زمان پرداخت انجام نمی‌شود.",
+
+            PaymentGateways.Zarinpal or PaymentGateways.Zibal or PaymentGateways.Offline or PaymentGateways.Fake => null,
+
+            _ => "درگاه پرداخت انتخاب‌شده معتبر نیست."
+        };
 
     private static bool IsHttpUrl(string value) =>
         Uri.TryCreate(value, UriKind.Absolute, out var uri)

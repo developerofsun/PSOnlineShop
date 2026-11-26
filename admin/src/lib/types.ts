@@ -167,12 +167,28 @@ export type UserRow = {
 // ---------- content ----------
 export type L10n = Record<string, string>;
 
+/** Per-slide appearance: what to show, colours (hex or null = default) and text alignment. */
+export type SlideStyle = {
+  showText: boolean;
+  showButton: boolean;
+  showBackground: boolean;
+  backgroundColor: string | null;
+  overlayColor: string | null;
+  textColor: string | null;
+  buttonColor: string | null;
+  buttonTextColor: string | null;
+  textAlign: 'start' | 'center' | 'end';
+  /** all | desktop | mobile — where the slide is shown. */
+  device: 'all' | 'desktop' | 'mobile';
+};
+
 export type SlideForm = {
   imageUrl: string;
   linkUrl: string | null;
   title: L10n;
   subtitle: L10n;
   buttonText: L10n;
+  style?: SlideStyle | null;
 };
 export type SliderRow = { id: number; name: string; isActive: boolean; slideCount: number };
 export type SliderDetail = { id: number; name: string; isActive: boolean; slides: SlideForm[] };

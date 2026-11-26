@@ -22,6 +22,13 @@ const BLOCK_TYPES = [
 ];
 const typeLabel = (t: string) => BLOCK_TYPES.find((b) => b.value === t)?.label ?? t;
 
+/** Where a block is shown; the storefront hides it with CSS, so both versions stay server-rendered. */
+const DEVICES = [
+  { value: 'all', label: 'همه دستگاه‌ها' },
+  { value: 'desktop', label: 'فقط کامپیوتر' },
+  { value: 'mobile', label: 'فقط موبایل' },
+];
+
 const SORTS = [
   { value: 'newest', label: 'جدیدترین' },
   { value: 'discount', label: 'بیشترین تخفیف' },
@@ -170,11 +177,11 @@ export default function PageEditPage() {
 
   function addBlock() {
     const defaults: Record<string, Record<string, unknown>> = {
-      slider: {},
-      banner: {},
-      text: {},
-      categories: { title: {} },
-      products: { sort: 'newest', limit: 8, categoryId: null, title: {} },
+      slider: { device: 'all' },
+      banner: { device: 'all' },
+      text: { device: 'all' },
+      categories: { title: {}, device: 'all' },
+      products: { sort: 'newest', limit: 8, categoryId: null, title: {}, device: 'all' },
     };
     setBlocks((bs) => [...bs, { type: newType, isActive: true, config: defaults[newType] ?? {} }]);
   }
@@ -207,6 +214,16 @@ export default function PageEditPage() {
                   }
                 >
                   {renderConfig(b, i)}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                    <span style={{ fontSize: 12, color: '#666' }}>نمایش روی:</span>
+                    <Select
+                      size="small"
+                      style={{ width: 220 }}
+                      value={(b.config.device as string | undefined) ?? 'all'}
+                      options={DEVICES}
+                      onChange={(v) => patchConfig(i, { device: v })}
+                    />
+                  </div>
                 </Card>
               ))}
 

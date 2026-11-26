@@ -1072,6 +1072,10 @@ namespace OnShop.Infrastructure.Persistence.Migrations
                     b.Property<int>("SortOrder")
                         .HasColumnType("integer");
 
+                    b.Property<string>("StyleJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<string>("SubtitleJson")
                         .IsRequired()
                         .HasColumnType("text");

@@ -24,8 +24,9 @@ public class AdminSlidersController(AppDbContext db) : ControllerBase
     {
         var s = await db.Sliders.AsNoTracking().Include(x => x.Slides).FirstOrDefaultAsync(x => x.Id == id);
         if (s is null) return NotFound();
-        return new SliderDetail(s.Id, s.Name, s.IsActive, s.Slides.OrderBy(x => x.SortOrder).Select(x => new SlideInput(
-            x.ImageUrl, x.LinkUrl, Localized.Parse(x.TitleJson), Localized.Parse(x.SubtitleJson), Localized.Parse(x.ButtonTextJson))).ToList());
+        return new SliderDetail(s.Id, s.Name, s.IsActive, s.Slides.OrderBy(x => x.SortOrder).Select(x => new SlideDetail(
+            x.ImageUrl, x.LinkUrl, Localized.Parse(x.TitleJson), Localized.Parse(x.SubtitleJson), Localized.Parse(x.ButtonTextJson),
+            SlideStyles.Clean(SlideStyles.Parse(x.StyleJson)))).ToList());
     }
 
     [HttpPost]
@@ -65,10 +66,13 @@ public class AdminSlidersController(AppDbContext db) : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(input.Name)) return "نام اسلایدر الزامی است.";
         if (input.Slides.Count > 20) return "حداکثر ۲۰ اسلاید مجاز است.";
-        foreach (var sl in input.Slides)
+        for (var i = 0; i < input.Slides.Count; i++)
         {
+            var sl = input.Slides[i];
             if (!Text.IsLocalImage(sl.ImageUrl)) return "فقط تصاویر آپلودشده‌ی محلی مجاز هستند.";
             if (!Text.IsSafeLink(sl.LinkUrl)) return "لینک نامعتبر است.";
+            var styleError = SlideStyles.Validate(sl.Style);
+            if (styleError is not null) return $"اسلاید {i + 1}: {styleError}";
         }
 
         s.Name = input.Name.Trim();
@@ -84,7 +88,8 @@ public class AdminSlidersController(AppDbContext db) : ControllerBase
                 LinkUrl = string.IsNullOrWhiteSpace(sl.LinkUrl) ? null : sl.LinkUrl.Trim(),
                 TitleJson = Localized.ToJson(sl.Title),
                 SubtitleJson = Localized.ToJson(sl.Subtitle),
-                ButtonTextJson = Localized.ToJson(sl.ButtonText)
+                ButtonTextJson = Localized.ToJson(sl.ButtonText),
+                StyleJson = SlideStyles.ToJson(sl.Style)
             });
         return null;
     }
@@ -303,6 +308,11 @@ public class AdminPagesController(AppDbContext db) : ControllerBase
     {
         if (!BlockTypes.All.Contains(b.Type)) return $"نوع بلوک «{b.Type}» نامعتبر است.";
         var cfg = b.Config;
+        if (cfg.ValueKind == JsonValueKind.Object && cfg.TryGetProperty("device", out var deviceNode))
+        {
+            var device = deviceNode.ValueKind == JsonValueKind.String ? deviceNode.GetString() : null;
+            if (!Devices.IsValid(device)) return "تنظیم نمایش بلوک روی دستگاه نامعتبر است.";
+        }
         switch (b.Type)
         {
             case BlockTypes.Slider:

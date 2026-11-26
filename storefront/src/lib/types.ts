@@ -58,20 +58,41 @@ export type OrderDetail = {
 };
 
 // ---------- content (pages, blocks) ----------
+/** Per-slide appearance. Colours are hex or null; textAlign is a logical CSS alignment. */
+export type SlideStyle = {
+  showText: boolean;
+  showButton: boolean;
+  showBackground: boolean;
+  backgroundColor: string | null;
+  overlayColor: string | null;
+  textColor: string | null;
+  buttonColor: string | null;
+  buttonTextColor: string | null;
+  textAlign: 'start' | 'center' | 'end';
+  /** Screens this slide is shown on; missing means everywhere. */
+  device?: 'all' | 'desktop' | 'mobile';
+};
+
 export type SlideDto = {
   imageUrl: string;
   linkUrl: string | null;
   title: string | null;
   subtitle: string | null;
   buttonText: string | null;
+  style?: SlideStyle | null;
 };
 
-export type BlockDto =
-  | { id: number; type: 'slider'; data: { slides: SlideDto[] } }
-  | { id: number; type: 'banner'; data: { imageUrl: string; linkUrl: string | null; title: string | null } }
-  | { id: number; type: 'text'; data: { text: string | null } }
-  | { id: number; type: 'products'; data: { title: string | null; categorySlug: string | null; items: ProductListItem[] } }
-  | { id: number; type: 'categories'; data: { title: string | null; items: CategoryItem[] } };
+/** Every block can be limited to desktop or mobile screens (Settings → page blocks). */
+type BlockBase = { id: number; device?: 'all' | 'desktop' | 'mobile' };
+
+export type BlockDto = BlockBase &
+  (
+    | { type: 'slider'; data: { slides: SlideDto[] } }
+    | { type: 'banner'; data: { imageUrl: string; linkUrl: string | null; title: string | null } }
+    | { type: 'text'; data: { text: string | null } }
+    | { type: 'products'; data: { title: string | null; categorySlug: string | null; items: ProductListItem[] } }
+    | { type: 'categories'; data: { title: string | null; items: CategoryItem[] } }
+  );
 
 export type PublicPage = {
   id: number;

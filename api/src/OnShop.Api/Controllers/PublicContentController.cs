@@ -156,11 +156,23 @@ public class PublicContentController(AppDbContext db, CatalogService catalog) : 
         foreach (var b in page.Blocks.Where(x => x.IsActive).OrderBy(x => x.SortOrder))
         {
             var data = await Resolve(b, lang);
-            if (data is not null) blocks.Add(new BlockDto(b.Id, b.Type, data));
+            if (data is not null) blocks.Add(new BlockDto(b.Id, b.Type, DeviceOf(b.ConfigJson), data));
         }
 
         return new PublicPage(page.Id, t.Title, t.Slug, t.SeoTitle, t.SeoDescription,
             page.Translations.ToDictionary(x => x.Lang, x => x.Slug), blocks);
+    }
+
+    /// <summary>The block's device setting; blocks saved before it existed (or with a bad value) show everywhere.</summary>
+    private static string DeviceOf(string? configJson)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(configJson) ? "{}" : configJson);
+            var value = Str(doc.RootElement, "device");
+            return Devices.IsValid(value) ? value! : Devices.All;
+        }
+        catch (JsonException) { return Devices.All; }
     }
 
     private static int? Int(JsonElement cfg, string name) =>
@@ -195,7 +207,8 @@ public class PublicContentController(AppDbContext db, CatalogService catalog) : 
                 if (slider is null || slider.Slides.Count == 0) return null;
                 return new SliderData(slider.Slides.OrderBy(s => s.SortOrder).Select(s => new SlideDto(
                     s.ImageUrl, s.LinkUrl,
-                    Localized.Pick(s.TitleJson, lang), Localized.Pick(s.SubtitleJson, lang), Localized.Pick(s.ButtonTextJson, lang))).ToList());
+                    Localized.Pick(s.TitleJson, lang), Localized.Pick(s.SubtitleJson, lang), Localized.Pick(s.ButtonTextJson, lang),
+                    SlideStyles.Clean(SlideStyles.Parse(s.StyleJson)))).ToList());
             }
             case BlockTypes.Banner:
             {

@@ -20,6 +20,35 @@ public class Slide
     public string TitleJson { get; set; } = "{}";
     public string SubtitleJson { get; set; } = "{}";
     public string ButtonTextJson { get; set; } = "{}";
+    /// <summary>Appearance options as JSON, see <see cref="SlideStyle"/>.</summary>
+    public string StyleJson { get; set; } = "{}";
+}
+
+/// <summary>
+/// Per-slide appearance: which parts are shown and their colours. Stored as <see cref="Slide.StyleJson"/>.
+/// Colours are hex (#rgb, #rrggbb or #rrggbbaa); null means "use the storefront default".
+/// Device restricts the slide to one kind of screen: all, desktop (≥768px) or mobile.
+/// </summary>
+public record SlideStyle(
+    bool ShowText = true,
+    bool ShowButton = true,
+    bool ShowBackground = true,
+    string? BackgroundColor = null,
+    string? OverlayColor = null,
+    string? TextColor = null,
+    string? ButtonColor = null,
+    string? ButtonTextColor = null,
+    string TextAlign = "start",
+    string Device = "all");
+
+/// <summary>Where a content block or slide is shown: on every screen, only on desktop, or only on mobile.</summary>
+public static class Devices
+{
+    public const string All = "all";
+    public const string Desktop = "desktop";
+    public const string Mobile = "mobile";
+    public static readonly string[] AllValues = [All, Desktop, Mobile];
+    public static bool IsValid(string? value) => value is not null && AllValues.Contains(value);
 }
 
 /// <summary>A fixed banner (image + optional link and title) that can be placed on any page.</summary>

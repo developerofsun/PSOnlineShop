@@ -105,8 +105,23 @@ public class OrdersController(
             return new CheckoutResponse(order.Number, $"{storefront}/{order.Locale}/order/{order.Number}?status=pending");
         }
 
-        var pay = await gateway.RequestAsync(
-            new PaymentRequest(order.Number, order.Total, callback, phone), paymentSettings, ct);
+        PaymentRequestResult pay;
+        try
+        {
+            pay = await gateway.RequestAsync(
+                new PaymentRequest(order.Number, order.Total, callback, phone), paymentSettings, ct);
+        }
+        catch (PaymentConfigurationException ex)
+        {
+            // Credentials missing in Admin → Settings → Payments (the gateway throws before contacting the bank).
+            log.LogError("Payment gateway is not configured: {Error}", ex.Message);
+            return StatusCode(503, new { error = "درگاه پرداخت کامل تنظیم نشده است؛ لطفاً با پشتیبانی تماس بگیرید." });
+        }
+        catch (Exception ex)
+        {
+            log.LogError(ex, "Payment request threw for {Order}", order.Number);
+            return StatusCode(502, new { error = "اتصال به درگاه پرداخت ناموفق بود." });
+        }
         if (!pay.Success || pay.RedirectUrl is null)
         {
             log.LogError("Payment request failed for {Order}: {Error}", order.Number, pay.Error);
