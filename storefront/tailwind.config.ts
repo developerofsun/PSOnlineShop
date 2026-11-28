@@ -20,10 +20,21 @@ const config: Config = {
           '20%, 60%': { transform: 'translateX(-3px)' },
           '40%, 80%': { transform: 'translateX(3px)' },
         },
+        // Shop assistant: a message sliding in, and the three bouncing dots while a reply is on its way.
+        assistantIn: {
+          from: { opacity: '0', transform: 'translateY(6px)' },
+          to: { opacity: '1', transform: 'translateY(0)' },
+        },
+        typing: {
+          '0%, 60%, 100%': { transform: 'translateY(0)', opacity: '.35' },
+          '30%': { transform: 'translateY(-4px)', opacity: '1' },
+        },
       },
       animation: {
         bump: 'bump .25s ease-out',
         shake: 'shake .4s ease-in-out',
+        'assistant-in': 'assistantIn .22s ease-out both',
+        typing: 'typing 1s infinite ease-in-out',
       },
       colors: {
         // Every existing `slate-*` class now resolves to a warm grey, so the whole UI loses its cold blue tint.
